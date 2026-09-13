@@ -15,7 +15,7 @@ The **Energy** panel toggles between **Energy Summary** (current kW totals) and 
 
 <img alt="PyPowerwall Server Console - Trend" src="https://github.com/user-attachments/assets/3fac475e-aebd-46a8-8c2d-8c4d294b2360" />
 
-The **Control** panel allows you to manage the Powerwall's operation mode, reserve percentage, and grid charging settings. Requires setting the `PW_CONTROL_SECRET` environment variable.
+The **Control** panel allows you to manage the Powerwall's operation mode, reserve percentage, grid charging (with eligibility warnings) and grid export (with PTO confirmation). Requires setting the `PW_CONTROL_SECRET` environment variable.
 
 <img alt="PyPowerwall Server Console - Control" src="https://github.com/user-attachments/assets/5a2bb9ee-78f6-440e-97e6-407fbfa720f7" />
 
@@ -736,8 +736,8 @@ automatically retry or send the opposite command.
 **Web Console (`/console`):** when `PW_CONTROL_SECRET` is set, the Console shows
 a *Powerwall Control* card (after System Health) with mode select
 (Self-Consumption/Backup/Time-Based), reserve slider + number (0–100), grid
-charging select (Enabled/Disabled), grid export select (Battery OK/PV Only/Never)
-and a
+charging toggle, grid export select (Everything/Solar/Never, labeled to match
+the Tesla app; the API values remain `battery_ok`/`pv_only`/`never`) and a
 token field (kept in the tab by default, optional “Remember my token on this
 device” persists it in `localStorage`; sent as `Authorization: Bearer <token>`
 per request).
@@ -752,6 +752,18 @@ calls, see note above), otherwise a single `/control/reserve` or `/control/mode`
 call, plus separate `POST /control/grid_charging {"value": true/false}` and
 `POST /control/grid_export {"value": "battery_ok"|"pv_only"|"never"}` calls when
 grid charging or export changed. Controls the default gateway.
+
+**Grid charging / export eligibility:** enabling grid charging, or moving grid
+export from *Never* to an exporting option, pops a confirmation dialog and has
+an info icon for reference. Enable grid export only when your utility has
+approved your system to export electricity — often called *Permission to
+Operate* (PTO). Only enable grid charging if your utility rate plan and local
+rules allow it; if you claim the U.S. federal Investment Tax Credit (ITC), tax
+rules have historically required batteries to be charged exclusively from solar
+— verify how grid charging affects your credit before enabling it. You are
+responsible for compliance with your utility and tax rules. Reference links:
+[IRS Residential Clean Energy Credit](https://www.irs.gov/credits-deductions/residential-clean-energy-credit)
+and [DSIRE](https://www.dsireusa.org/) for state/local incentives and rules.
 
 For a local PW3 v1r/TEDAPI gateway, the card also shows the cached grid state
 and enables exactly one islanding action: **Go Off Grid** while connected or

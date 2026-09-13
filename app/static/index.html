@@ -812,6 +812,60 @@
         .control-remember input {
             accent-color: var(--accent-green);
         }
+        .control-toggle {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+            user-select: none;
+            min-height: 38px;
+        }
+        .control-toggle input {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .control-toggle-track {
+            width: 44px;
+            height: 24px;
+            border-radius: 12px;
+            background: rgba(139, 148, 158, 0.4);
+            position: relative;
+            transition: background 0.15s ease;
+            flex-shrink: 0;
+        }
+        .control-toggle-thumb {
+            position: absolute;
+            top: 3px;
+            left: 3px;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: #ffffff;
+            transition: transform 0.15s ease;
+        }
+        .control-toggle input:checked + .control-toggle-track {
+            background: var(--accent-green);
+        }
+        .control-toggle input:checked + .control-toggle-track .control-toggle-thumb {
+            transform: translateX(20px);
+        }
+        .control-toggle input:disabled + .control-toggle-track {
+            opacity: 0.4;
+        }
+        .control-toggle input:focus-visible + .control-toggle-track {
+            outline: 2px solid var(--accent-blue);
+            outline-offset: 2px;
+        }
+        .control-toggle-text {
+            font-size: 0.9em;
+            color: var(--text-primary);
+            font-weight: 600;
+        }
+        .control-info-btn {
+            opacity: 0.75;
+        }
         .control-btn {
             background: transparent;
             color: var(--text-secondary);
@@ -1768,18 +1822,25 @@
                         <div class="control-hint">Now: <span id="control-current-reserve" class="control-reserve-value">--</span></div>
                     </div>
                     <div class="control-field">
-                        <div class="control-label">Grid Charging</div>
-                        <select id="control-grid-charging" aria-label="Grid charging">
-                            <option value="disabled">Disabled</option>
-                            <option value="enabled">Enabled</option>
-                        </select>
+                        <div class="control-label-row">
+                            <div class="control-label">Grid Charging</div>
+                            <button type="button" class="control-btn control-icon-btn control-info-btn" id="control-grid-charging-info" title="Grid charging eligibility (utility rules and tax credit)" aria-label="Grid charging eligibility info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+                        </div>
+                        <label class="control-toggle">
+                            <input type="checkbox" id="control-grid-charging" aria-label="Grid charging">
+                            <span class="control-toggle-track"><span class="control-toggle-thumb"></span></span>
+                            <span class="control-toggle-text" id="control-grid-charging-text">--</span>
+                        </label>
                         <div class="control-hint">Now: <span id="control-current-grid-charging">--</span></div>
                     </div>
                     <div class="control-field">
-                        <div class="control-label">Grid Export</div>
+                        <div class="control-label-row">
+                            <div class="control-label">Grid Export</div>
+                            <button type="button" class="control-btn control-icon-btn control-info-btn" id="control-grid-export-info" title="Grid export requires utility approval (PTO)" aria-label="Grid export eligibility info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+                        </div>
                         <select id="control-grid-export" aria-label="Grid export">
-                            <option value="battery_ok">Battery OK</option>
-                            <option value="pv_only">PV Only</option>
+                            <option value="battery_ok">Everything</option>
+                            <option value="pv_only">Solar</option>
                             <option value="never">Never</option>
                         </select>
                         <div class="control-hint">Now: <span id="control-current-grid-export">--</span></div>
@@ -3586,16 +3647,25 @@
             updateIslandingControls();
         }
 
+        // Eligibility notes shared by the info icons and the confirm dialogs.
+        const PTO_INFO = 'Enable grid export only when your utility has approved your system to export electricity — often called Permission to Operate (PTO). Exporting without approval may violate your interconnection agreement.';
+        const GRID_CHARGE_INFO = 'Only enable grid charging if your utility rate plan and local rules allow charging your Powerwall from the grid. If you claim the U.S. federal Investment Tax Credit (ITC), tax rules have historically required batteries to be charged exclusively from solar — you are responsible for confirming how grid charging affects your credit. See the README for reference links.';
+
         // Styled confirmation modal (native <dialog>) replacing window.confirm.
-        // Resolves true only on an explicit confirm click; ESC, backdrop
-        // click, and Cancel all resolve false.
+        // Shared by islanding, grid charging and grid export. Resolves true
+        // only on an explicit confirm click; ESC, backdrop click, and Cancel
+        // all resolve false.
         const CONFIRM_ICON_WARNING = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
-        function confirmIslanding({ title, body, confirmLabel, danger }) {
+        function confirmDialog({ title, body, confirmLabel, danger }) {
             return new Promise((resolve) => {
                 const dlg = document.getElementById('islanding-confirm');
                 if (!dlg || typeof dlg.showModal !== 'function') {
                     // Ancient browser fallback — keep the old behavior
                     resolve(window.confirm(`${title}\n\n${body}`));
+                    return;
+                }
+                if (dlg.open) {  // one dialog at a time — never stack modals
+                    resolve(false);
                     return;
                 }
                 dlg.className = 'confirm-dialog ' + (danger ? 'danger' : 'caution');
@@ -3656,7 +3726,7 @@
                 return;
             }
             const goingOffGrid = value === 'off_grid';
-            const proceed = await confirmIslanding(goingOffGrid
+            const proceed = await confirmDialog(goingOffGrid
                 ? {
                     title: 'Go off grid?',
                     body: 'This physically opens your home\'s grid contactor. Power and solar '
@@ -3707,13 +3777,20 @@
             if (row) row.style.display = controlDirty ? '' : 'none';
         }
 
+        // Toggle label follows the checkbox state (the track color is CSS).
+        function updateGridChargingText() {
+            const box = document.getElementById('control-grid-charging');
+            const text = document.getElementById('control-grid-charging-text');
+            if (box && text) text.textContent = box.checked ? 'Enabled' : 'Disabled';
+        }
+
         // Which fields differ from the server state. With a null initial
         // state (values not loaded yet) only fields the user actually
         // touched count as changed — never send an untouched HTML default.
         function controlChanges() {
             const modeVal = document.getElementById('control-mode')?.value;
             const reserveVal = parseInt(document.getElementById('control-reserve-number')?.value, 10);
-            const gridChargingVal = document.getElementById('control-grid-charging')?.value === 'enabled';
+            const gridChargingVal = document.getElementById('control-grid-charging')?.checked === true;
             const gridExportVal = document.getElementById('control-grid-export')?.value;
             const mChanged = controlInitial.mode === null
                 ? controlTouched.mode
@@ -3788,8 +3865,8 @@
                     (gridCharging === true ? 'Enabled' : gridCharging === false ? 'Disabled' : '--')
                     + (stale && gridCharging !== null ? ' (stale)' : '');
                 const gridExportMap = {
-                    'battery_ok': 'Battery OK',
-                    'pv_only': 'PV Only',
+                    'battery_ok': 'Everything',
+                    'pv_only': 'Solar',
                     'never': 'Never',
                 };
                 document.getElementById('control-current-grid-export').textContent =
@@ -3836,9 +3913,10 @@
                 const gridChargingSel = document.getElementById('control-grid-charging');
                 if (gridChargingSel) {
                     if (gridCharging !== null) {
-                        gridChargingSel.value = gridCharging ? 'enabled' : 'disabled';
+                        gridChargingSel.checked = gridCharging;
                     }
                     gridChargingSel.disabled = gridCharging === null;
+                    updateGridChargingText();
                 }
                 const gridExportSel = document.getElementById('control-grid-export');
                 const gridExportKnown = gridExport !== null && !!gridExportMap[gridExport];
@@ -4091,7 +4169,24 @@
             }
             const gridChargingSel = document.getElementById('control-grid-charging');
             if (gridChargingSel) {
-                gridChargingSel.addEventListener('change', () => {
+                gridChargingSel.addEventListener('change', async () => {
+                    // Enabling grid charging can violate utility rules or
+                    // affect the U.S. ITC — confirm before it counts as a
+                    // change; a declined toggle reverts untouched.
+                    if (gridChargingSel.checked) {
+                        const ok = await confirmDialog({
+                            title: 'Enable grid charging?',
+                            body: GRID_CHARGE_INFO,
+                            confirmLabel: 'Enable Grid Charging',
+                            danger: false,
+                        });
+                        if (!ok) {
+                            gridChargingSel.checked = controlInitial.gridCharging === true;
+                            updateGridChargingText();
+                            return;
+                        }
+                    }
+                    updateGridChargingText();
                     controlTouched.gridCharging = true;
                     controlDirty = true;
                     updateReserve0Warning();
@@ -4100,13 +4195,39 @@
             }
             const gridExportSel = document.getElementById('control-grid-export');
             if (gridExportSel) {
-                gridExportSel.addEventListener('change', () => {
+                gridExportSel.addEventListener('change', async () => {
+                    // Moving from a non-exporting value to an exporting one
+                    // needs utility approval (PTO); switching between two
+                    // exporting values does not re-confirm.
+                    const wasExporting = ['battery_ok', 'pv_only'].includes(controlInitial.gridExport);
+                    const nowExporting = ['battery_ok', 'pv_only'].includes(gridExportSel.value);
+                    if (nowExporting && !wasExporting) {
+                        const ok = await confirmDialog({
+                            title: 'Enable grid export?',
+                            body: PTO_INFO,
+                            confirmLabel: 'Enable Export',
+                            danger: false,
+                        });
+                        if (!ok) {
+                            gridExportSel.value = controlInitial.gridExport || 'never';
+                            return;
+                        }
+                    }
                     controlTouched.gridExport = true;
                     controlDirty = true;
                     updateReserve0Warning();
                     updateDirtyHint();
                 });
             }
+            // Info icons open the same dialogs read-only for reference.
+            const gridChargingInfo = document.getElementById('control-grid-charging-info');
+            if (gridChargingInfo) gridChargingInfo.addEventListener('click', () => {
+                confirmDialog({ title: 'Grid charging eligibility', body: GRID_CHARGE_INFO, confirmLabel: 'Got it', danger: false });
+            });
+            const gridExportInfo = document.getElementById('control-grid-export-info');
+            if (gridExportInfo) gridExportInfo.addEventListener('click', () => {
+                confirmDialog({ title: 'Grid export eligibility (PTO)', body: PTO_INFO, confirmLabel: 'Got it', danger: false });
+            });
             const saveBtn = document.getElementById('control-save');
             if (saveBtn) saveBtn.addEventListener('click', saveControl);
             const islandingBtn = document.getElementById('control-islanding-action');
