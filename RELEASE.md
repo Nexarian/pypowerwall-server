@@ -2,6 +2,12 @@
 
 ## Version History
 
+### [0.6.6] - Upcoming
+
+**Added:**
+- **Console grid charging control** — the Powerwall Control card gains a Grid Charging select (Enabled/Disabled) wired to the existing `POST /control/grid_charging` API. The current value comes from `GET /api/operation` (new `grid_charging` field, `null` when unavailable e.g. TEDAPI-only without cloud, with hybrid cloud fallback and stale marking like mode/reserve) and is saved via the card's single Save button with the same dirty-check, token and 401 hygiene as mode/reserve. Grid charging is sent as a separate call after mode/reserve, so a partial save names the completed steps instead of looking like a full one.
+- **Console grid export control** — the same card gains a Grid Export select (Battery OK/PV Only/Never). This adds the missing `POST /control/grid_export` route (strict allowlist `battery_ok`/`pv_only`/`never`, routed via cloud or local like the other controls; previously such a POST fell into the raw-POST fallback unchecked), a new `grid_export` field on `GET /api/operation` with the same unavailable/stale contract, and a second separate save call whose partial-failure message lists all completed steps.
+
 ### [0.6.5] - 2026-09-12
 
 **Added:**

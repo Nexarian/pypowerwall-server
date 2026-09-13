@@ -735,16 +735,23 @@ automatically retry or send the opposite command.
 
 **Web Console (`/console`):** when `PW_CONTROL_SECRET` is set, the Console shows
 a *Powerwall Control* card (after System Health) with mode select
-(Self-Consumption/Backup/Time-Based), reserve slider + number (0–100) and a
+(Self-Consumption/Backup/Time-Based), reserve slider + number (0–100), grid
+charging select (Enabled/Disabled), grid export select (Battery OK/PV Only/Never)
+and a
 token field (kept in the tab by default, optional “Remember my token on this
 device” persists it in `localStorage`; sent as `Authorization: Bearer <token>`
 per request).
 Availability is checked via unauthenticated `GET /control/status`
-(`{"enabled": bool}`); current values come from `GET /api/operation`. One Save
+(`{"enabled": bool}`); current values come from `GET /api/operation` (which
+also reports `grid_charging` and `grid_export`, `null` when unavailable e.g.
+TEDAPI-only without
+cloud). One Save
 button sends a single combined `POST /control/mode {"value": mode, "level":
 reserve}` when both changed (reserve 0 + mode change is auto-split into two
 calls, see note above), otherwise a single `/control/reserve` or `/control/mode`
-call. Controls the default gateway.
+call, plus separate `POST /control/grid_charging {"value": true/false}` and
+`POST /control/grid_export {"value": "battery_ok"|"pv_only"|"never"}` calls when
+grid charging or export changed. Controls the default gateway.
 
 For a local PW3 v1r/TEDAPI gateway, the card also shows the cached grid state
 and enables exactly one islanding action: **Go Off Grid** while connected or

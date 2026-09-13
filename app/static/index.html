@@ -1759,6 +1759,23 @@
                         <div class="control-hint">Now: <span id="control-current-reserve" class="control-reserve-value">--</span></div>
                     </div>
                     <div class="control-field">
+                        <div class="control-label">Grid Charging</div>
+                        <select id="control-grid-charging" aria-label="Grid charging">
+                            <option value="disabled">Disabled</option>
+                            <option value="enabled">Enabled</option>
+                        </select>
+                        <div class="control-hint">Now: <span id="control-current-grid-charging">--</span></div>
+                    </div>
+                    <div class="control-field">
+                        <div class="control-label">Grid Export</div>
+                        <select id="control-grid-export" aria-label="Grid export">
+                            <option value="battery_ok">Battery OK</option>
+                            <option value="pv_only">PV Only</option>
+                            <option value="never">Never</option>
+                        </select>
+                        <div class="control-hint">Now: <span id="control-current-grid-export">--</span></div>
+                    </div>
+                    <div class="control-field">
                         <div class="control-label">Token</div>
                         <div class="control-token-row">
                             <input type="password" id="control-token" placeholder="Paste your control token" autocomplete="off">
@@ -3382,8 +3399,8 @@
         const CONTROL_EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
         const CONTROL_EYE_CLOSED = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><path d="M14.12 14.12a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>';
         let controlEnabled = false;
-        let controlInitial = { mode: null, reserve: null };
-        let controlTouched = { mode: false, reserve: false };
+        let controlInitial = { mode: null, reserve: null, gridCharging: null, gridExport: null };
+        let controlTouched = { mode: false, reserve: false, gridCharging: false, gridExport: false };
         let controlDirty = false;
         let controlSaving = false;
         let controlIslandingBusy = false;
@@ -3685,13 +3702,21 @@
         function controlChanges() {
             const modeVal = document.getElementById('control-mode')?.value;
             const reserveVal = parseInt(document.getElementById('control-reserve-number')?.value, 10);
+            const gridChargingVal = document.getElementById('control-grid-charging')?.value === 'enabled';
+            const gridExportVal = document.getElementById('control-grid-export')?.value;
             const mChanged = controlInitial.mode === null
                 ? controlTouched.mode
                 : modeVal !== controlInitial.mode;
             const rChanged = controlInitial.reserve === null
                 ? controlTouched.reserve
                 : reserveVal !== controlInitial.reserve;
-            return { modeVal, reserveVal, mChanged, rChanged };
+            const gChanged = controlInitial.gridCharging === null
+                ? controlTouched.gridCharging
+                : gridChargingVal !== controlInitial.gridCharging;
+            const eChanged = controlInitial.gridExport === null
+                ? controlTouched.gridExport
+                : gridExportVal !== controlInitial.gridExport;
+            return { modeVal, reserveVal, gridChargingVal, gridExportVal, mChanged, rChanged, gChanged, eChanged };
         }
 
         function updateReserve0Warning() {
@@ -3733,6 +3758,10 @@
                 const mode = op.real_mode || null;
                 const reserve = (op.backup_reserve_percent !== null && op.backup_reserve_percent !== undefined)
                     ? Math.round(Number(op.backup_reserve_percent)) : null;
+                const gridCharging = (op.grid_charging === true || op.grid_charging === false)
+                    ? op.grid_charging : null;
+                const gridExport = (typeof op.grid_export === 'string' && op.grid_export)
+                    ? op.grid_export : null;
                 const stale = !!op.stale;
 
                 const modeMap = {
@@ -3744,6 +3773,16 @@
                     (modeMap[mode] || mode || '--') + (stale && mode ? ' (stale)' : '');
                 document.getElementById('control-current-reserve').textContent =
                     (reserve !== null ? reserve + '%' : '--') + (stale && reserve !== null ? ' (stale)' : '');
+                document.getElementById('control-current-grid-charging').textContent =
+                    (gridCharging === true ? 'Enabled' : gridCharging === false ? 'Disabled' : '--')
+                    + (stale && gridCharging !== null ? ' (stale)' : '');
+                const gridExportMap = {
+                    'battery_ok': 'Battery OK',
+                    'pv_only': 'PV Only',
+                    'never': 'Never',
+                };
+                document.getElementById('control-current-grid-export').textContent =
+                    (gridExportMap[gridExport] || gridExport || '--') + (stale && gridExport ? ' (stale)' : '');
 
                 const staleWarn = document.getElementById('control-stale-warning');
                 if (staleWarn) {
@@ -3771,8 +3810,22 @@
                     if (slider) slider.value = reserve;
                     if (number) number.value = reserve;
                 }
-                controlInitial = { mode, reserve };
-                controlTouched = { mode: false, reserve: false };
+                const gridChargingSel = document.getElementById('control-grid-charging');
+                if (gridChargingSel) {
+                    if (gridCharging !== null) {
+                        gridChargingSel.value = gridCharging ? 'enabled' : 'disabled';
+                    }
+                    gridChargingSel.disabled = gridCharging === null;
+                }
+                const gridExportSel = document.getElementById('control-grid-export');
+                if (gridExportSel) {
+                    if (gridExport !== null && gridExportMap[gridExport]) {
+                        gridExportSel.value = gridExport;
+                    }
+                    gridExportSel.disabled = gridExport === null;
+                }
+                controlInitial = { mode, reserve, gridCharging, gridExport };
+                controlTouched = { mode: false, reserve: false, gridCharging: false, gridExport: false };
                 controlDirty = false;
                 updateReserve0Warning();
                 updateDirtyHint();
@@ -3813,7 +3866,7 @@
                 return;
             }
             setControlToken(token);
-            const { modeVal, reserveVal, mChanged, rChanged } = controlChanges();
+            const { modeVal, reserveVal, gridChargingVal, gridExportVal, mChanged, rChanged, gChanged, eChanged } = controlChanges();
             if (!['self_consumption', 'backup', 'autonomous'].includes(modeVal)) {
                 setControlMessage('That mode is unknown.', 'error');
                 return;
@@ -3822,7 +3875,11 @@
                 setControlMessage('Reserve must be 0–100.', 'error');
                 return;
             }
-            if (!mChanged && !rChanged) {
+            if (!['battery_ok', 'pv_only', 'never'].includes(gridExportVal)) {
+                setControlMessage('That grid export value is unknown.', 'error');
+                return;
+            }
+            if (!mChanged && !rChanged && !gChanged && !eChanged) {
                 setControlMessage('Nothing to save.', '');
                 return;
             }
@@ -3874,7 +3931,7 @@
                         }
                         throw new Error(controlErrorText(r.resp.status, r.payload, null));
                     }
-                } else {
+                } else if (mChanged) {
                     const r = await postControl('mode', { value: modeVal }, token);
                     if (!r.resp.ok) {
                         if (r.resp.status === 401) {
@@ -3884,8 +3941,44 @@
                         throw new Error(controlErrorText(r.resp.status, r.payload, null));
                     }
                 }
+                // No atomic multi-write: each call below lands on its own.
+                // Name the completed steps on failure so a partial save is
+                // never mistaken for a full one (same honesty as the
+                // reserve-0 message above).
+                const nameSaved = (names) => names.length > 1
+                    ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]
+                    : names[0];
+                if (gChanged) {
+                    const g = await postControl('grid_charging', { value: gridChargingVal }, token);
+                    if (!g.resp.ok) {
+                        if (g.resp.status === 401) {
+                            clearControlToken();
+                            if (tokenInput) tokenInput.value = '';
+                        }
+                        const applied = [];
+                        if (mChanged) applied.push('mode');
+                        if (rChanged) applied.push('reserve');
+                        const prefix = applied.length ? 'Saved ' + nameSaved(applied) + '. ' : '';
+                        throw new Error(prefix + controlErrorText(g.resp.status, g.payload, 'Saving grid charging failed.'));
+                    }
+                }
+                if (eChanged) {
+                    const x = await postControl('grid_export', { value: gridExportVal }, token);
+                    if (!x.resp.ok) {
+                        if (x.resp.status === 401) {
+                            clearControlToken();
+                            if (tokenInput) tokenInput.value = '';
+                        }
+                        const applied = [];
+                        if (mChanged) applied.push('mode');
+                        if (rChanged) applied.push('reserve');
+                        if (gChanged) applied.push('grid charging');
+                        const prefix = applied.length ? 'Saved ' + nameSaved(applied) + '. ' : '';
+                        throw new Error(prefix + controlErrorText(x.resp.status, x.payload, 'Saving grid export failed.'));
+                    }
+                }
                 setControlMessage('Saved. Takes a few seconds to apply.', 'success');
-                controlTouched = { mode: false, reserve: false };
+                controlTouched = { mode: false, reserve: false, gridCharging: false, gridExport: false };
                 controlDirty = false;
                 updateDirtyHint();
                 await loadControlValues(false);
@@ -3967,6 +4060,24 @@
             if (modeSel) {
                 modeSel.addEventListener('change', () => {
                     controlTouched.mode = true;
+                    controlDirty = true;
+                    updateReserve0Warning();
+                    updateDirtyHint();
+                });
+            }
+            const gridChargingSel = document.getElementById('control-grid-charging');
+            if (gridChargingSel) {
+                gridChargingSel.addEventListener('change', () => {
+                    controlTouched.gridCharging = true;
+                    controlDirty = true;
+                    updateReserve0Warning();
+                    updateDirtyHint();
+                });
+            }
+            const gridExportSel = document.getElementById('control-grid-export');
+            if (gridExportSel) {
+                gridExportSel.addEventListener('change', () => {
+                    controlTouched.gridExport = true;
                     controlDirty = true;
                     updateReserve0Warning();
                     updateDirtyHint();
