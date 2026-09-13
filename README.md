@@ -17,7 +17,7 @@ The **Energy** panel toggles between **Energy Summary** (current kW totals) and 
 
 The **Control** panel allows you to manage the Powerwall's operation mode, reserve percentage, grid charging (with eligibility warnings) and grid export (with PTO confirmation). Requires setting the `PW_CONTROL_SECRET` environment variable.
 
-<img alt="PyPowerwall Server Console - Control" src="https://github.com/user-attachments/assets/5a2bb9ee-78f6-440e-97e6-407fbfa720f7" />
+<img alt="PyPowerwall Server Console - Control" src="https://github.com/user-attachments/assets/6240d664-f129-499e-be2c-7003af2bad9c" />
 
 The **MQTT** panel shows the live MQTT settings if the `PW_MQTT_BROKER` environment variable is set.
 
