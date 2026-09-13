@@ -762,8 +762,13 @@ rules allow it. If you claim the U.S. federal Investment Tax Credit (ITC):
 batteries placed in service before 2023 were required to charge exclusively
 from solar, and the Inflation Reduction Act removed that restriction for
 systems placed in service from 2023 on — verify how grid charging affects
-your credit before enabling it. You are responsible for compliance with your
-utility and tax rules. Reference links:
+your credit before enabling it. Rules for residential battery storage —
+grid charging, grid export, and system operation — also differ between
+countries and regions (for example, between EU Member States and their
+local grid-connection requirements). pypowerwall-server does not determine
+or enforce regulatory compliance: you are responsible for ensuring that
+your configuration and use of these controls complies with the regulations
+applicable to your installation and jurisdiction. Reference links:
 [IRS Residential Clean Energy Credit](https://www.irs.gov/credits-deductions/residential-clean-energy-credit)
 and [DSIRE](https://www.dsireusa.org/) for state/local incentives and rules.
 

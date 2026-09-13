@@ -3778,10 +3778,14 @@
         }
 
         // Toggle label follows the checkbox state (the track color is CSS).
+        // An unavailable (disabled) control never shows Enabled/Disabled —
+        // the last known setting must not be presented as a real one.
         function updateGridChargingText() {
             const box = document.getElementById('control-grid-charging');
             const text = document.getElementById('control-grid-charging-text');
-            if (box && text) text.textContent = box.checked ? 'Enabled' : 'Disabled';
+            if (box && text) {
+                text.textContent = box.disabled ? '--' : (box.checked ? 'Enabled' : 'Disabled');
+            }
         }
 
         // Which fields differ from the server state. With a null initial
@@ -3869,8 +3873,10 @@
                     'pv_only': 'Solar',
                     'never': 'Never',
                 };
+                const exportLabel = Object.prototype.hasOwnProperty.call(gridExportMap, gridExport)
+                    ? gridExportMap[gridExport] : null;
                 document.getElementById('control-current-grid-export').textContent =
-                    (gridExportMap[gridExport] || gridExport || '--') + (stale && gridExport ? ' (stale)' : '');
+                    (exportLabel || gridExport || '--') + (stale && gridExport ? ' (stale)' : '');
 
                 const staleWarn = document.getElementById('control-stale-warning');
                 if (staleWarn) {
@@ -3893,7 +3899,10 @@
                 // the select is disabled and the initial is nulled: otherwise
                 // the default option would read as "changed" and a no-edit
                 // Save would silently overwrite the unknown state.
-                const modeKnown = !!modeMap[mode];
+                // Own-property check: an unknown firmware value like
+                // 'constructor' or 'toString' must not look up an inherited
+                // property and masquerade as a known option.
+                const modeKnown = mode !== null && Object.prototype.hasOwnProperty.call(modeMap, mode);
                 const modeSel = document.getElementById('control-mode');
                 if (modeSel) {
                     if (modeKnown) {
@@ -3914,12 +3923,17 @@
                 if (gridChargingSel) {
                     if (gridCharging !== null) {
                         gridChargingSel.checked = gridCharging;
+                    } else {
+                        // Unavailable: drop any previous checked state so no
+                        // phantom setting survives a value disappearing.
+                        gridChargingSel.checked = false;
                     }
                     gridChargingSel.disabled = gridCharging === null;
                     updateGridChargingText();
                 }
                 const gridExportSel = document.getElementById('control-grid-export');
-                const gridExportKnown = gridExport !== null && !!gridExportMap[gridExport];
+                const gridExportKnown = gridExport !== null
+                    && Object.prototype.hasOwnProperty.call(gridExportMap, gridExport);
                 if (gridExportSel) {
                     if (gridExportKnown) {
                         gridExportSel.value = gridExport;
@@ -4051,7 +4065,18 @@
                     ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]
                     : names[0];
                 if (gChanged) {
-                    const g = await postControl('grid_charging', { value: gridChargingVal }, token);
+                    let g;
+                    try {
+                        g = await postControl('grid_charging', { value: gridChargingVal }, token);
+                    } catch (e) {
+                        // Transport-level failure (fetch rejected): still name
+                        // the completed steps, same as a non-2xx response.
+                        const applied = [];
+                        if (mChanged) applied.push('mode');
+                        if (rChanged) applied.push('reserve');
+                        const prefix = applied.length ? 'Saved ' + nameSaved(applied) + '. ' : '';
+                        throw new Error(prefix + ((e && e.message) ? e.message : 'Saving grid charging failed.'));
+                    }
                     if (!g.resp.ok) {
                         if (g.resp.status === 401) {
                             clearControlToken();
@@ -4065,7 +4090,17 @@
                     }
                 }
                 if (eChanged) {
-                    const x = await postControl('grid_export', { value: gridExportVal }, token);
+                    let x;
+                    try {
+                        x = await postControl('grid_export', { value: gridExportVal }, token);
+                    } catch (e) {
+                        const applied = [];
+                        if (mChanged) applied.push('mode');
+                        if (rChanged) applied.push('reserve');
+                        if (gChanged) applied.push('grid charging');
+                        const prefix = applied.length ? 'Saved ' + nameSaved(applied) + '. ' : '';
+                        throw new Error(prefix + ((e && e.message) ? e.message : 'Saving grid export failed.'));
+                    }
                     if (!x.resp.ok) {
                         if (x.resp.status === 401) {
                             clearControlToken();
