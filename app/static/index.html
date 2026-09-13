@@ -752,6 +752,12 @@
             text-transform: uppercase;
             letter-spacing: 0.5px;
         }
+        .control-label-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 8px;
+        }
         .control-field select,
         .control-field input[type="number"],
         .control-token-row input {
@@ -1734,7 +1740,10 @@
                 <div class="control-warning" id="control-reserve0-warning"></div>
                 <div class="control-grid">
                     <div class="control-field" id="control-grid-field">
-                        <div class="control-label">Grid</div>
+                        <div class="control-label-row">
+                            <div class="control-label">Grid</div>
+                            <button type="button" class="control-btn control-icon-btn" id="control-refresh-grid" title="Refresh grid status" aria-label="Refresh grid status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg></button>
+                        </div>
                         <div class="control-grid-state unknown" id="control-grid-state">
                             <span class="control-grid-icon" id="control-grid-icon"></span>
                             <span id="control-grid-state-text">--</span>
@@ -1793,7 +1802,6 @@
                         </div>
                         <div class="control-islanding-actions">
                             <button type="button" class="control-btn danger" id="control-islanding-action" disabled>Go Off Grid</button>
-                            <button type="button" class="control-btn control-icon-btn" id="control-refresh-grid" title="Refresh grid status" aria-label="Refresh grid status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg></button>
                         </div>
                     </div>
                     <div class="control-message" id="control-islanding-message" style="display:none"></div>
@@ -3478,6 +3486,10 @@
         function updateIslandingControls() {
             const actionBtn = document.getElementById('control-islanding-action');
             const cooldownEl = document.getElementById('control-islanding-cooldown');
+            // No local PW3 v1r/TEDAPI connection: hide the whole section
+            // instead of showing a disabled button with an excuse.
+            const panel = document.querySelector('.control-islanding-panel');
+            if (panel) panel.style.display = controlIslandingAvailable ? '' : 'none';
             const remainingMs = islandingCooldownUntil() - Date.now();
             const cooldownActive = remainingMs > 0;
 
@@ -3498,10 +3510,9 @@
 
             if (cooldownEl) {
                 // Only surface a hint when something is actually blocking.
+                // (Unavailable needs no hint: the panel itself is hidden.)
                 let hint = '';
-                if (!controlIslandingAvailable) {
-                    hint = 'Requires a local PW3 v1r/TEDAPI connection.';
-                } else if (controlIslandingBusy) {
+                if (controlIslandingBusy) {
                     hint = 'Request in progress — do not retry or send the opposite command.';
                 } else if (cooldownActive) {
                     hint = `Locked for ${Math.ceil(remainingMs / 1000)}s after a request.`;

@@ -755,7 +755,8 @@ grid charging or export changed. Controls the default gateway.
 
 For a local PW3 v1r/TEDAPI gateway, the card also shows the cached grid state
 and enables exactly one islanding action: **Go Off Grid** while connected or
-**Reconnect Grid** while islanded. Each action requires a browser confirmation.
+**Reconnect Grid** while islanded. The islanding section is hidden entirely
+on gateways without a local v1r connection. Each action requires a browser confirmation.
 After any request, both islanding controls are locked for one minute, including
 after an error or timeout, because the outcome may be unknown. Use **Refresh
 Grid Status** and verify the reported state after the polling interval; an
