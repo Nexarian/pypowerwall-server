@@ -734,13 +734,19 @@ timeout, the outcome may be unknown and the command may still complete; do not
 automatically retry or send the opposite command.
 
 **Web Console (`/console`):** when `PW_CONTROL_SECRET` is set, the Console shows
-a *Powerwall Control* card (after System Health) with mode select
-(Self-Consumption/Backup/Time-Based), reserve slider + number (0–100), grid
-charging toggle, grid export select (Everything/Solar/Never, labeled to match
-the Tesla app; the API values remain `battery_ok`/`pv_only`/`never`) and a
-token field (kept in the tab by default, optional “Remember my token on this
-device” persists it in `localStorage`; sent as `Authorization: Bearer <token>`
-per request).
+a *Powerwall Control* card (after System Health) grouped into bordered
+sub-panels: **Authorization Token** (kept in the tab by default; optional
+“Remember my token on this device” persists it in `localStorage`; sent as
+`Authorization: Bearer <token>` per request), **Operating Mode** and **Battery**
+side by side (a mode radio group—Self-Consumption/Backup/Time-Based—and the
+backup reserve slider + number, 0–100), and **Grid** (grid connection status, a
+grid charging toggle, a grid export radio group—Everything/Solar/Never, labeled
+to match the Tesla app; the API values remain `battery_ok`/`pv_only`/`never`—
+and the Go Off Grid/Reconnect Grid action in the same row, kept in its own
+highlighted panel since it is the one destructive control). Each control always
+reflects the live state — there is no separate "Now:" readout — and a control
+the user just changed stays highlighted until the next poll confirms the
+gateway applied it.
 Availability is checked via unauthenticated `GET /control/status`
 (`{"enabled": bool}`); current values come from `GET /api/operation` (which
 also reports `grid_charging` and `grid_export`, `null` when unavailable e.g.
@@ -762,8 +768,13 @@ rules allow it. If you claim the U.S. federal Investment Tax Credit (ITC):
 batteries placed in service before 2023 were required to charge exclusively
 from solar, and the Inflation Reduction Act removed that restriction for
 systems placed in service from 2023 on — verify how grid charging affects
-your credit before enabling it. You are responsible for compliance with your
-utility and tax rules. Reference links:
+your credit before enabling it. Rules for residential battery storage —
+grid charging, grid export, and system operation — also differ between
+countries and regions (for example, between EU Member States and their
+local grid-connection requirements). pypowerwall-server does not determine
+or enforce regulatory compliance: you are responsible for ensuring that
+your configuration and use of these controls complies with the regulations
+applicable to your installation and jurisdiction. Reference links:
 [IRS Residential Clean Energy Credit](https://www.irs.gov/credits-deductions/residential-clean-energy-credit)
 and [DSIRE](https://www.dsireusa.org/) for state/local incentives and rules.
 

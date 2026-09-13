@@ -726,11 +726,72 @@
             background: rgba(63, 185, 80, 0.15);
             color: var(--accent-green);
         }
-        .control-grid {
+        /* Three logical groups inside the card: Operating Mode, Battery,
+           Grid — each a bordered sub-panel so the control areas read as
+           distinct groups. Operating Mode and Battery sit side by side;
+           Grid spans the full width below them. */
+        .control-section-columns {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
             gap: 16px;
-            margin-bottom: 0;
+            margin-bottom: 16px;
+        }
+        .control-section {
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px;
+        }
+        .control-section-title {
+            font-size: 0.75em;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.6px;
+            color: var(--text-secondary);
+            margin-bottom: 12px;
+        }
+        /* Collapsible section header (Authorization Token). A plain <div>
+           title becomes a full-width button with a disclosure chevron;
+           non-collapsible section titles are unaffected since they stay
+           plain <div>s. */
+        .control-section-toggle {
+            background: none;
+            border: none;
+            padding: 0;
+            margin: 0 0 12px;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            width: 100%;
+            text-align: left;
+            cursor: pointer;
+            font-family: inherit;
+        }
+        .control-section-toggle:hover {
+            color: var(--text-primary);
+        }
+        .control-section-chevron {
+            display: inline-flex;
+            transition: transform 0.15s ease;
+            font-size: 0.85em;
+        }
+        .control-section.collapsed .control-section-toggle .control-section-chevron {
+            transform: rotate(0deg);
+        }
+        .control-section:not(.collapsed) .control-section-toggle .control-section-chevron {
+            transform: rotate(90deg);
+        }
+        .control-section.collapsed .control-section-body {
+            display: none;
+        }
+        .control-section-body {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+        .control-section-row {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 16px;
         }
         .control-field {
             background: var(--bg-secondary);
@@ -739,6 +800,15 @@
             display: flex;
             flex-direction: column;
             gap: 10px;
+            border: 1px solid transparent;
+            transition: border-color 0.15s ease, box-shadow 0.15s ease;
+        }
+        /* A control the user just changed stays highlighted (no more "Now:"
+           text) until the next poll confirms the server reports the same
+           value — i.e. the change actually took effect. */
+        .control-field.control-pending {
+            border-color: var(--accent-blue);
+            box-shadow: 0 0 0 1px var(--accent-blue);
         }
         .control-save-row {
             display: flex;
@@ -754,11 +824,10 @@
         }
         .control-label-row {
             display: flex;
-            align-items: flex-start;
-            justify-content: space-between;
-            gap: 8px;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 6px;
         }
-        .control-field select,
         .control-field input[type="number"],
         .control-token-row input {
             background: var(--bg-card);
@@ -769,7 +838,6 @@
             font-size: 0.95em;
             width: 100%;
         }
-        .control-field select:focus,
         .control-field input:focus,
         .control-token-row input:focus {
             outline: none;
@@ -788,9 +856,51 @@
             width: 90px;
             flex-shrink: 0;
         }
-        .control-reserve-value {
-            font-variant-numeric: tabular-nums;
+        .control-radio-group {
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+        }
+        .control-radio-option {
+            position: relative;
+            flex: 1 1 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 6px;
+            padding: 8px 10px;
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            background: var(--bg-card);
+            color: var(--text-secondary);
+            font-size: 0.9em;
+            text-align: center;
+            cursor: pointer;
+            user-select: none;
+            transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+        }
+        .control-radio-option input {
+            position: absolute;
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .control-radio-option:has(input:checked) {
+            border-color: var(--accent-green);
+            background: rgba(63, 185, 80, 0.15);
+            color: var(--accent-green);
             font-weight: 600;
+        }
+        .control-radio-option:has(input:disabled) {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        .control-radio-option:hover:not(:has(input:disabled)) {
+            border-color: var(--accent-blue);
+        }
+        .control-radio-option:has(input:focus-visible) {
+            outline: 2px solid var(--accent-blue);
+            outline-offset: 2px;
         }
         .control-token-row {
             display: flex;
@@ -894,6 +1004,19 @@
             width: 16px;
             height: 16px;
         }
+        /* Compact variant: the info/refresh icon sits directly beside its
+           label instead of floating right-justified, so it reads as part of
+           the control rather than a disconnected button. */
+        .control-label-row .control-icon-btn {
+            min-width: 22px;
+            width: 22px;
+            height: 22px;
+            padding: 0;
+        }
+        .control-label-row .control-icon-btn svg {
+            width: 13px;
+            height: 13px;
+        }
         .control-btn.primary {
             background: rgba(63, 185, 80, 0.15);
             border-color: var(--accent-green);
@@ -927,25 +1050,22 @@
         .control-message.success { color: var(--accent-green); }
         .control-message.error { color: var(--accent-red); }
         .control-islanding-panel {
-            margin-top: 16px;
-            padding: 12px 16px;
+            padding: 16px;
             border: 1px solid rgba(210, 153, 34, 0.5);
             border-radius: 8px;
             background: rgba(210, 153, 34, 0.08);
         }
-        .control-islanding-row {
+        /* The label stays pinned at the top of the box (like every other
+           field); the action button centers in the remaining vertical
+           space instead of hugging the label, so it doesn't look stranded
+           at the top when siblings in the row are taller. */
+        .control-islanding-body {
+            flex: 1;
             display: flex;
             align-items: center;
-            justify-content: space-between;
-            gap: 12px;
-            flex-wrap: wrap;
         }
-        .control-islanding-left {
-            display: flex;
-            align-items: baseline;
-            gap: 12px;
-            flex-wrap: wrap;
-            min-width: 0;
+        .control-islanding-panel .control-btn.danger {
+            width: 100%;
         }
         .control-islanding-hint {
             display: inline;
@@ -963,11 +1083,6 @@
         }
         .control-field.grid-flash {
             animation: grid-flash 1.1s ease-out;
-        }
-        .control-islanding-actions {
-            display: flex;
-            align-items: center;
-            gap: 8px;
         }
         .control-grid-state {
             display: flex;
@@ -1028,6 +1143,7 @@
         }
         .confirm-dialog.danger .confirm-dialog-icon { color: var(--accent-red); }
         .confirm-dialog.caution .confirm-dialog-icon { color: var(--accent-yellow); }
+        .confirm-dialog.info .confirm-dialog-icon { color: var(--accent-blue); }
         .confirm-dialog-title {
             font-size: 1.1em;
             font-weight: 600;
@@ -1792,80 +1908,128 @@
                 </div>
                 <div class="control-warning" id="control-stale-warning"></div>
                 <div class="control-warning" id="control-reserve0-warning"></div>
-                <div class="control-grid">
-                    <div class="control-field" id="control-grid-field">
-                        <div class="control-label-row">
-                            <div class="control-label">Grid</div>
-                            <button type="button" class="control-btn control-icon-btn" id="control-refresh-grid" title="Refresh grid status" aria-label="Refresh grid status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg></button>
+                <div class="control-section" id="control-token-section">
+                    <button type="button" class="control-section-title control-section-toggle" id="control-token-section-toggle" aria-expanded="true" aria-controls="control-token-section-body">
+                        <span class="control-section-chevron" aria-hidden="true">▶</span>
+                        Authorization Token
+                    </button>
+                    <div class="control-section-body" id="control-token-section-body">
+                        <div class="control-field" id="control-token-field">
+                            <div class="control-label-row">
+                                <div class="control-label">Token</div>
+                                <button type="button" class="control-btn control-icon-btn control-info-btn" id="control-token-info" title="About the control token" aria-label="About the control token"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+                            </div>
+                            <div class="control-token-row">
+                                <input type="password" id="control-token" placeholder="Paste your control token" autocomplete="off">
+                                <button type="button" class="control-btn control-icon-btn" id="control-token-toggle" title="Show token" aria-label="Show token"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
+                                <button type="button" class="control-btn control-icon-btn" id="control-token-clear" title="Clear token" aria-label="Clear token">✕</button>
+                            </div>
+                            <label class="control-remember"><input type="checkbox" id="control-remember"> Remember my token on this device</label>
                         </div>
-                        <div class="control-grid-state unknown" id="control-grid-state">
-                            <span class="control-grid-icon" id="control-grid-icon"></span>
-                            <span id="control-grid-state-text">--</span>
-                        </div>
-                        <div class="control-hint" id="control-grid-status">Checking grid status…</div>
-                    </div>
-                    <div class="control-field">
-                        <div class="control-label">Mode</div>
-                        <select id="control-mode">
-                            <option value="self_consumption">Self-Consumption</option>
-                            <option value="backup">Backup</option>
-                            <option value="autonomous">Time-Based</option>
-                        </select>
-                        <div class="control-hint">Now: <span id="control-current-mode">--</span></div>
-                    </div>
-                    <div class="control-field">
-                        <div class="control-label">Backup Reserve</div>
-                        <div class="control-reserve-row">
-                            <input type="range" id="control-reserve-slider" min="0" max="100" step="1" value="20" aria-label="Backup reserve percent">
-                            <input type="number" id="control-reserve-number" min="0" max="100" step="1" value="20" aria-label="Backup reserve percent value">
-                        </div>
-                        <div class="control-hint">Now: <span id="control-current-reserve" class="control-reserve-value">--</span></div>
-                    </div>
-                    <div class="control-field">
-                        <div class="control-label-row">
-                            <div class="control-label">Grid Charging</div>
-                            <button type="button" class="control-btn control-icon-btn control-info-btn" id="control-grid-charging-info" title="Grid charging eligibility (utility rules and tax credit)" aria-label="Grid charging eligibility info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
-                        </div>
-                        <label class="control-toggle">
-                            <input type="checkbox" id="control-grid-charging" aria-label="Grid charging">
-                            <span class="control-toggle-track"><span class="control-toggle-thumb"></span></span>
-                            <span class="control-toggle-text" id="control-grid-charging-text">--</span>
-                        </label>
-                        <div class="control-hint">Now: <span id="control-current-grid-charging">--</span></div>
-                    </div>
-                    <div class="control-field">
-                        <div class="control-label-row">
-                            <div class="control-label">Grid Export</div>
-                            <button type="button" class="control-btn control-icon-btn control-info-btn" id="control-grid-export-info" title="Grid export requires utility approval (PTO)" aria-label="Grid export eligibility info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
-                        </div>
-                        <select id="control-grid-export" aria-label="Grid export">
-                            <option value="battery_ok">Everything</option>
-                            <option value="pv_only">Solar</option>
-                            <option value="never">Never</option>
-                        </select>
-                        <div class="control-hint">Now: <span id="control-current-grid-export">--</span></div>
-                    </div>
-                    <div class="control-field">
-                        <div class="control-label">Token</div>
-                        <div class="control-token-row">
-                            <input type="password" id="control-token" placeholder="Paste your control token" autocomplete="off">
-                            <button type="button" class="control-btn control-icon-btn" id="control-token-toggle" title="Show token" aria-label="Show token"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg></button>
-                            <button type="button" class="control-btn control-icon-btn" id="control-token-clear" title="Clear token" aria-label="Clear token">✕</button>
-                        </div>
-                        <label class="control-remember"><input type="checkbox" id="control-remember"> Remember my token on this device</label>
                     </div>
                 </div>
-                <div class="control-islanding-panel">
-                    <div class="control-islanding-row">
-                        <div class="control-islanding-left">
-                            <div class="control-label">Grid Islanding</div>
-                            <div class="control-hint control-islanding-hint" id="control-islanding-cooldown" style="display:none"></div>
-                        </div>
-                        <div class="control-islanding-actions">
-                            <button type="button" class="control-btn danger" id="control-islanding-action" disabled>Go Off Grid</button>
+                <div class="control-section-columns">
+                    <div class="control-section">
+                        <div class="control-section-title">Operating Mode</div>
+                        <div class="control-section-body">
+                            <div class="control-field" id="control-mode-field">
+                                <div class="control-label-row">
+                                    <div class="control-label">Mode</div>
+                                    <button type="button" class="control-btn control-icon-btn control-info-btn" id="control-mode-info" title="About operating modes" aria-label="About operating modes"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+                                </div>
+                                <div class="control-radio-group" id="control-mode" role="radiogroup" aria-label="Mode">
+                                    <label class="control-radio-option">
+                                        <input type="radio" name="control-mode" value="self_consumption">
+                                        <span>Self-Consumption</span>
+                                    </label>
+                                    <label class="control-radio-option">
+                                        <input type="radio" name="control-mode" value="backup">
+                                        <span>Backup</span>
+                                    </label>
+                                    <label class="control-radio-option">
+                                        <input type="radio" name="control-mode" value="autonomous">
+                                        <span>Time-Based</span>
+                                    </label>
+                                </div>
+                            </div>
                         </div>
                     </div>
-                    <div class="control-message" id="control-islanding-message" style="display:none"></div>
+
+                    <div class="control-section">
+                        <div class="control-section-title">Battery</div>
+                        <div class="control-section-body">
+                            <div class="control-field" id="control-reserve-field">
+                                <div class="control-label-row">
+                                    <div class="control-label">Backup Reserve</div>
+                                    <button type="button" class="control-btn control-icon-btn control-info-btn" id="control-reserve-info" title="About backup reserve" aria-label="About backup reserve"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+                                </div>
+                                <div class="control-reserve-row">
+                                    <input type="range" id="control-reserve-slider" min="0" max="100" step="1" value="20" aria-label="Backup reserve percent">
+                                    <input type="number" id="control-reserve-number" min="0" max="100" step="1" value="20" aria-label="Backup reserve percent value">
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-section">
+                    <div class="control-section-title">Grid</div>
+                    <div class="control-section-body">
+                        <div class="control-section-row">
+                            <div class="control-field" id="control-grid-field">
+                                <div class="control-label-row">
+                                    <div class="control-label">Grid Status</div>
+                                    <button type="button" class="control-btn control-icon-btn" id="control-refresh-grid" title="Refresh grid status" aria-label="Refresh grid status"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-2.64-6.36"/><polyline points="21 3 21 9 15 9"/></svg></button>
+                                </div>
+                                <div class="control-grid-state unknown" id="control-grid-state">
+                                    <span class="control-grid-icon" id="control-grid-icon"></span>
+                                    <span id="control-grid-state-text">--</span>
+                                </div>
+                                <div class="control-hint" id="control-grid-status">Checking grid status…</div>
+                            </div>
+                            <div class="control-field" id="control-grid-charging-field">
+                                <div class="control-label-row">
+                                    <div class="control-label">Grid Charging</div>
+                                    <button type="button" class="control-btn control-icon-btn control-info-btn" id="control-grid-charging-info" title="Grid charging eligibility (utility rules and tax credit)" aria-label="Grid charging eligibility info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+                                </div>
+                                <label class="control-toggle">
+                                    <input type="checkbox" id="control-grid-charging" aria-label="Grid charging">
+                                    <span class="control-toggle-track"><span class="control-toggle-thumb"></span></span>
+                                    <span class="control-toggle-text" id="control-grid-charging-text">--</span>
+                                </label>
+                            </div>
+                            <div class="control-field" id="control-grid-export-field">
+                                <div class="control-label-row">
+                                    <div class="control-label">Grid Export</div>
+                                    <button type="button" class="control-btn control-icon-btn control-info-btn" id="control-grid-export-info" title="Grid export requires utility approval (PTO)" aria-label="Grid export eligibility info"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg></button>
+                                </div>
+                                <div class="control-radio-group" id="control-grid-export" role="radiogroup" aria-label="Grid export">
+                                    <label class="control-radio-option">
+                                        <input type="radio" name="control-grid-export" value="battery_ok">
+                                        <span>Everything</span>
+                                    </label>
+                                    <label class="control-radio-option">
+                                        <input type="radio" name="control-grid-export" value="pv_only">
+                                        <span>Solar</span>
+                                    </label>
+                                    <label class="control-radio-option">
+                                        <input type="radio" name="control-grid-export" value="never">
+                                        <span>Never</span>
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="control-field control-islanding-panel">
+                                <div class="control-label-row">
+                                    <div class="control-label">Grid Islanding</div>
+                                </div>
+                                <div class="control-islanding-body">
+                                    <button type="button" class="control-btn danger" id="control-islanding-action" disabled>Go Off Grid</button>
+                                </div>
+                                <div class="control-hint control-islanding-hint" id="control-islanding-cooldown" style="display:none"></div>
+                                <div class="control-message" id="control-islanding-message" style="display:none"></div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
                 <!-- Islanding confirmation modal -->
@@ -3463,6 +3627,7 @@
         // Powerwall Control (GET /control/status → enabled, writes via POST /control/*)
         const CONTROL_TOKEN_KEY = 'pw_control_token';
         const CONTROL_REMEMBER_KEY = 'pw_control_remember';
+        const TOKEN_SECTION_COLLAPSED_KEY = 'pw_token_section_collapsed';
         const ISLANDING_COOLDOWN_KEY = 'pw_islanding_cooldown_until';
         const ISLANDING_COOLDOWN_MS = 60 * 1000;
         const CONTROL_EYE_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
@@ -3470,12 +3635,69 @@
         let controlEnabled = false;
         let controlInitial = { mode: null, reserve: null, gridCharging: null, gridExport: null };
         let controlTouched = { mode: false, reserve: false, gridCharging: false, gridExport: false };
+        // Separate from controlTouched (which drives the Save button and is
+        // cleared as soon as a save request succeeds): controlPending tracks
+        // "not yet confirmed by a poll of the live server state" and drives
+        // the .control-pending highlight. It outlives a successful save —
+        // the highlight only clears once /api/operation actually reports the
+        // new value, since a write can take a few seconds to apply.
+        let controlPending = { mode: false, reserve: false, gridCharging: false, gridExport: false };
         let controlDirty = false;
         let controlSaving = false;
         let controlIslandingBusy = false;
         let controlIslandingAvailable = false;
         let controlGridState = 'unknown';
         let controlIslandingCooldownTimer = null;
+
+        // Radio-group helpers (Mode, Grid Export). A native <select> can
+        // only ever report one of its listed options — even for a value the
+        // gateway never confirmed — so an unconfirmed/unknown state silently
+        // looked like a real selection. A radio group can have none checked,
+        // which is the honest representation while that field is unknown.
+        function getRadioValue(name) {
+            const checked = document.querySelector('input[name="' + name + '"]:checked');
+            return checked ? checked.value : null;
+        }
+
+        function setRadioValue(name, value) {
+            document.querySelectorAll('input[name="' + name + '"]').forEach((radio) => {
+                radio.checked = radio.value === value;
+            });
+        }
+
+        function setRadioDisabled(name, disabled) {
+            document.querySelectorAll('input[name="' + name + '"]').forEach((radio) => {
+                radio.disabled = disabled;
+            });
+        }
+
+        // "Now:" text is gone — the control itself always shows the current
+        // state. While a field is touched but not yet confirmed by a poll,
+        // highlight its card instead (see loadControlValues()).
+        function setFieldPending(fieldId, pending) {
+            const el = document.getElementById(fieldId);
+            if (el) el.classList.toggle('control-pending', pending);
+        }
+
+        // Authorization Token section is user-collapsible (disclosure
+        // chevron); the choice is remembered per-browser across sessions.
+        function isTokenSectionCollapsed() {
+            try {
+                return localStorage.getItem(TOKEN_SECTION_COLLAPSED_KEY) === '1';
+            } catch (e) {
+                return false;
+            }
+        }
+
+        function setTokenSectionCollapsed(collapsed) {
+            const section = document.getElementById('control-token-section');
+            const toggle = document.getElementById('control-token-section-toggle');
+            if (section) section.classList.toggle('collapsed', collapsed);
+            if (toggle) toggle.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            try {
+                localStorage.setItem(TOKEN_SECTION_COLLAPSED_KEY, collapsed ? '1' : '0');
+            } catch (e) { /* private browsing — falls back to expanded each load */ }
+        }
 
         function isRememberToken() {
             return document.getElementById('control-remember')?.checked === true;
@@ -3650,13 +3872,20 @@
         // Eligibility notes shared by the info icons and the confirm dialogs.
         const PTO_INFO = 'Enable grid export only when your utility has approved your system to export electricity — often called Permission to Operate (PTO). Exporting without approval may violate your interconnection agreement.';
         const GRID_CHARGE_INFO = 'Only enable grid charging if your utility rate plan and local rules allow charging your Powerwall from the grid. Tax note: batteries claimed under the U.S. federal Investment Tax Credit (ITC) before 2023 were required to charge exclusively from solar; the Inflation Reduction Act removed that restriction for systems placed in service from 2023 on. You are responsible for confirming how grid charging affects your credit — see the README for reference links.';
+        const MODE_INFO = 'Self-Consumption uses solar first, the battery next, and the grid only as a last resort. Backup keeps the battery topped up toward your reserve level to be ready for outages. Time-Based (autonomous) shifts battery usage automatically to your utility\'s rate schedule to reduce cost.';
+        const RESERVE_INFO = 'Backup Reserve is the percentage of battery capacity held back for outages. Capacity above this level is available for daily self-consumption or export, depending on your Mode and Grid Export settings.';
+        const TOKEN_INFO = 'This is the PW_CONTROL_SECRET value set on the server. Paste it here to authorize changes to Mode, Backup Reserve, Grid Charging, Grid Export and Grid Islanding. Check "Remember" to store it in this browser for next time.';
 
         // Styled confirmation modal (native <dialog>) replacing window.confirm.
         // Shared by islanding, grid charging and grid export. Resolves true
         // only on an explicit confirm click; ESC, backdrop click, and Cancel
         // all resolve false.
         const CONFIRM_ICON_WARNING = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>';
-        function confirmDialog({ title, body, confirmLabel, danger }) {
+        // Plain (non-cautionary) info icon — used by the read-only "About
+        // this control" dialogs (Mode/Reserve/Token) so they don't look like
+        // warnings the way the Grid Charging/Export eligibility notices do.
+        const CONFIRM_ICON_INFO = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><line x1="12" y1="16" x2="12" y2="12"/><line x1="12" y1="8" x2="12.01" y2="8"/></svg>';
+        function confirmDialog({ title, body, confirmLabel, danger, info }) {
             return new Promise((resolve) => {
                 const dlg = document.getElementById('islanding-confirm');
                 if (!dlg || typeof dlg.showModal !== 'function') {
@@ -3668,8 +3897,8 @@
                     resolve(false);
                     return;
                 }
-                dlg.className = 'confirm-dialog ' + (danger ? 'danger' : 'caution');
-                document.getElementById('islanding-confirm-icon').innerHTML = CONFIRM_ICON_WARNING;
+                dlg.className = 'confirm-dialog ' + (info ? 'info' : (danger ? 'danger' : 'caution'));
+                document.getElementById('islanding-confirm-icon').innerHTML = info ? CONFIRM_ICON_INFO : CONFIRM_ICON_WARNING;
                 document.getElementById('islanding-confirm-title').textContent = title;
                 document.getElementById('islanding-confirm-body').textContent = body;
                 const okBtn = document.getElementById('islanding-confirm-ok');
@@ -3778,20 +4007,24 @@
         }
 
         // Toggle label follows the checkbox state (the track color is CSS).
+        // An unavailable (disabled) control never shows Enabled/Disabled —
+        // the last known setting must not be presented as a real one.
         function updateGridChargingText() {
             const box = document.getElementById('control-grid-charging');
             const text = document.getElementById('control-grid-charging-text');
-            if (box && text) text.textContent = box.checked ? 'Enabled' : 'Disabled';
+            if (box && text) {
+                text.textContent = box.disabled ? '--' : (box.checked ? 'Enabled' : 'Disabled');
+            }
         }
 
         // Which fields differ from the server state. With a null initial
         // state (values not loaded yet) only fields the user actually
         // touched count as changed — never send an untouched HTML default.
         function controlChanges() {
-            const modeVal = document.getElementById('control-mode')?.value;
+            const modeVal = getRadioValue('control-mode');
             const reserveVal = parseInt(document.getElementById('control-reserve-number')?.value, 10);
             const gridChargingVal = document.getElementById('control-grid-charging')?.checked === true;
-            const gridExportVal = document.getElementById('control-grid-export')?.value;
+            const gridExportVal = getRadioValue('control-grid-export');
             const mChanged = controlInitial.mode === null
                 ? controlTouched.mode
                 : modeVal !== controlInitial.mode;
@@ -3833,11 +4066,11 @@
             }
             if (card) card.style.display = controlEnabled ? '' : 'none';
             if (controlEnabled) {
-                await loadControlValues(false);
+                await loadControlValues();
             }
         }
 
-        async function loadControlValues(isRefresh) {
+        async function loadControlValues() {
             if (!controlEnabled) return;
             try {
                 const resp = await fetch('/api/operation');
@@ -3857,20 +4090,11 @@
                     'backup': 'Backup',
                     'autonomous': 'Time-Based',
                 };
-                document.getElementById('control-current-mode').textContent =
-                    (modeMap[mode] || mode || '--') + (stale && mode ? ' (stale)' : '');
-                document.getElementById('control-current-reserve').textContent =
-                    (reserve !== null ? reserve + '%' : '--') + (stale && reserve !== null ? ' (stale)' : '');
-                document.getElementById('control-current-grid-charging').textContent =
-                    (gridCharging === true ? 'Enabled' : gridCharging === false ? 'Disabled' : '--')
-                    + (stale && gridCharging !== null ? ' (stale)' : '');
                 const gridExportMap = {
                     'battery_ok': 'Everything',
                     'pv_only': 'Solar',
                     'never': 'Never',
                 };
-                document.getElementById('control-current-grid-export').textContent =
-                    (gridExportMap[gridExport] || gridExport || '--') + (stale && gridExport ? ' (stale)' : '');
 
                 const staleWarn = document.getElementById('control-stale-warning');
                 if (staleWarn) {
@@ -3884,51 +4108,88 @@
                     }
                 }
 
-                if (isRefresh && controlDirty) {
-                    updateReserve0Warning();
-                    updateDirtyHint();
-                    return; // Dirty check: do not overwrite user input
-                }
-                // Unknown-but-reported values stay visible as raw text, but
-                // the select is disabled and the initial is nulled: otherwise
+                // Unknown-but-reported values are locked (disabled, initial
+                // nulled) rather than shown as a false selection: otherwise
                 // the default option would read as "changed" and a no-edit
                 // Save would silently overwrite the unknown state.
-                const modeKnown = !!modeMap[mode];
-                const modeSel = document.getElementById('control-mode');
-                if (modeSel) {
-                    if (modeKnown) {
-                        modeSel.value = mode;
+                const modeKnown = mode !== null && Object.prototype.hasOwnProperty.call(modeMap, mode);
+                const gridExportKnown = gridExport !== null && Object.prototype.hasOwnProperty.call(gridExportMap, gridExport);
+
+                // Each field is independent: an in-progress edit on one
+                // control (highlighted via .control-pending) must not block
+                // others from refreshing, and a pending control only clears
+                // its highlight once the poll confirms the server now
+                // reports what's shown on screen — it's never overwritten
+                // mid-edit, and a save doesn't clear the highlight early
+                // (see controlPending's definition above).
+                if (controlPending.mode) {
+                    if (modeKnown && mode === getRadioValue('control-mode')) {
+                        controlPending.mode = false;
+                        controlTouched.mode = false;
+                        controlInitial.mode = mode;
+                        setFieldPending('control-mode-field', false);
                     }
+                } else {
+                    setRadioValue('control-mode', modeKnown ? mode : null);
                     // Null (e.g. Basic LAN without cloud) stays editable for
                     // optimistic writes; only a reported-but-unknown value
-                    // locks the select (see gridExportKnown below).
-                    modeSel.disabled = mode !== null && !modeKnown;
+                    // locks the group (see gridExportKnown below).
+                    setRadioDisabled('control-mode', mode !== null && !modeKnown);
+                    controlInitial.mode = modeKnown ? mode : null;
                 }
-                if (reserve !== null) {
+
+                if (controlPending.reserve) {
+                    const shown = parseInt(document.getElementById('control-reserve-number')?.value, 10);
+                    if (reserve !== null && reserve === shown) {
+                        controlPending.reserve = false;
+                        controlTouched.reserve = false;
+                        controlInitial.reserve = reserve;
+                        setFieldPending('control-reserve-field', false);
+                    }
+                } else if (reserve !== null) {
                     const slider = document.getElementById('control-reserve-slider');
                     const number = document.getElementById('control-reserve-number');
                     if (slider) slider.value = reserve;
                     if (number) number.value = reserve;
+                    controlInitial.reserve = reserve;
                 }
+
                 const gridChargingSel = document.getElementById('control-grid-charging');
-                if (gridChargingSel) {
+                if (controlPending.gridCharging) {
+                    if (gridCharging !== null && gridChargingSel && gridCharging === gridChargingSel.checked) {
+                        controlPending.gridCharging = false;
+                        controlTouched.gridCharging = false;
+                        controlInitial.gridCharging = gridCharging;
+                        setFieldPending('control-grid-charging-field', false);
+                    }
+                } else if (gridChargingSel) {
                     if (gridCharging !== null) {
                         gridChargingSel.checked = gridCharging;
+                    } else {
+                        // Unavailable: drop any previous checked state so no
+                        // phantom setting survives a value disappearing.
+                        gridChargingSel.checked = false;
                     }
                     gridChargingSel.disabled = gridCharging === null;
+                    controlInitial.gridCharging = gridCharging;
                     updateGridChargingText();
                 }
-                const gridExportSel = document.getElementById('control-grid-export');
-                const gridExportKnown = gridExport !== null && !!gridExportMap[gridExport];
-                if (gridExportSel) {
-                    if (gridExportKnown) {
-                        gridExportSel.value = gridExport;
+
+                if (controlPending.gridExport) {
+                    if (gridExportKnown && gridExport === getRadioValue('control-grid-export')) {
+                        controlPending.gridExport = false;
+                        controlTouched.gridExport = false;
+                        controlInitial.gridExport = gridExport;
+                        setFieldPending('control-grid-export-field', false);
                     }
-                    gridExportSel.disabled = !gridExportKnown;
+                } else {
+                    setRadioValue('control-grid-export', gridExportKnown ? gridExport : null);
+                    setRadioDisabled('control-grid-export', !gridExportKnown);
+                    controlInitial.gridExport = gridExportKnown ? gridExport : null;
                 }
-                controlInitial = { mode: modeKnown ? mode : null, reserve, gridCharging, gridExport: gridExportKnown ? gridExport : null };
-                controlTouched = { mode: false, reserve: false, gridCharging: false, gridExport: false };
-                controlDirty = false;
+
+                controlDirty = controlTouched.mode || controlTouched.reserve
+                    || controlTouched.gridCharging || controlTouched.gridExport;
                 updateReserve0Warning();
                 updateDirtyHint();
             } catch (e) {
@@ -4051,7 +4312,18 @@
                     ? names.slice(0, -1).join(', ') + ' and ' + names[names.length - 1]
                     : names[0];
                 if (gChanged) {
-                    const g = await postControl('grid_charging', { value: gridChargingVal }, token);
+                    let g;
+                    try {
+                        g = await postControl('grid_charging', { value: gridChargingVal }, token);
+                    } catch (e) {
+                        // Transport-level failure (fetch rejected): still name
+                        // the completed steps, same as a non-2xx response.
+                        const applied = [];
+                        if (mChanged) applied.push('mode');
+                        if (rChanged) applied.push('reserve');
+                        const prefix = applied.length ? 'Saved ' + nameSaved(applied) + '. ' : '';
+                        throw new Error(prefix + ((e && e.message) ? e.message : 'Saving grid charging failed.'));
+                    }
                     if (!g.resp.ok) {
                         if (g.resp.status === 401) {
                             clearControlToken();
@@ -4065,7 +4337,17 @@
                     }
                 }
                 if (eChanged) {
-                    const x = await postControl('grid_export', { value: gridExportVal }, token);
+                    let x;
+                    try {
+                        x = await postControl('grid_export', { value: gridExportVal }, token);
+                    } catch (e) {
+                        const applied = [];
+                        if (mChanged) applied.push('mode');
+                        if (rChanged) applied.push('reserve');
+                        if (gChanged) applied.push('grid charging');
+                        const prefix = applied.length ? 'Saved ' + nameSaved(applied) + '. ' : '';
+                        throw new Error(prefix + ((e && e.message) ? e.message : 'Saving grid export failed.'));
+                    }
                     if (!x.resp.ok) {
                         if (x.resp.status === 401) {
                             clearControlToken();
@@ -4080,10 +4362,14 @@
                     }
                 }
                 setControlMessage('Saved. Takes a few seconds to apply.', 'success');
+                // Only controlTouched (and the Save row) reset here — the
+                // per-field .control-pending highlight is intentionally left
+                // alone; it clears itself once loadControlValues() confirms
+                // the write actually took effect.
                 controlTouched = { mode: false, reserve: false, gridCharging: false, gridExport: false };
                 controlDirty = false;
                 updateDirtyHint();
-                await loadControlValues(false);
+                await loadControlValues();
                 await loadStats();
             } catch (e) {
                 setControlMessage(e.message || 'Save failed.', 'error');
@@ -4098,7 +4384,13 @@
             const rememberBox = document.getElementById('control-remember');
             const slider = document.getElementById('control-reserve-slider');
             const number = document.getElementById('control-reserve-number');
-            const modeSel = document.getElementById('control-mode');
+            setTokenSectionCollapsed(isTokenSectionCollapsed());
+            const tokenSectionToggle = document.getElementById('control-token-section-toggle');
+            if (tokenSectionToggle) {
+                tokenSectionToggle.addEventListener('click', () => {
+                    setTokenSectionCollapsed(!isTokenSectionCollapsed());
+                });
+            }
             if (tokenInput) {
                 let saved = '';
                 try {
@@ -4146,7 +4438,9 @@
                 slider.addEventListener('input', () => {
                     number.value = slider.value;
                     controlTouched.reserve = true;
+                    controlPending.reserve = true;
                     controlDirty = true;
+                    setFieldPending('control-reserve-field', true);
                     updateReserve0Warning();
                     updateDirtyHint();
                 });
@@ -4154,19 +4448,24 @@
                     const v = parseInt(number.value, 10);
                     if (Number.isInteger(v) && v >= 0 && v <= 100) slider.value = v;
                     controlTouched.reserve = true;
+                    controlPending.reserve = true;
                     controlDirty = true;
+                    setFieldPending('control-reserve-field', true);
                     updateReserve0Warning();
                     updateDirtyHint();
                 });
             }
-            if (modeSel) {
-                modeSel.addEventListener('change', () => {
+            document.querySelectorAll('input[name="control-mode"]').forEach((radio) => {
+                radio.addEventListener('change', () => {
+                    if (!radio.checked) return;
                     controlTouched.mode = true;
+                    controlPending.mode = true;
                     controlDirty = true;
+                    setFieldPending('control-mode-field', true);
                     updateReserve0Warning();
                     updateDirtyHint();
                 });
-            }
+            });
             const gridChargingSel = document.getElementById('control-grid-charging');
             if (gridChargingSel) {
                 gridChargingSel.addEventListener('change', async () => {
@@ -4188,19 +4487,21 @@
                     }
                     updateGridChargingText();
                     controlTouched.gridCharging = true;
+                    controlPending.gridCharging = true;
                     controlDirty = true;
+                    setFieldPending('control-grid-charging-field', true);
                     updateReserve0Warning();
                     updateDirtyHint();
                 });
             }
-            const gridExportSel = document.getElementById('control-grid-export');
-            if (gridExportSel) {
-                gridExportSel.addEventListener('change', async () => {
+            document.querySelectorAll('input[name="control-grid-export"]').forEach((radio) => {
+                radio.addEventListener('change', async () => {
+                    if (!radio.checked) return;
                     // Moving from a non-exporting value to an exporting one
                     // needs utility approval (PTO); switching between two
                     // exporting values does not re-confirm.
                     const wasExporting = ['battery_ok', 'pv_only'].includes(controlInitial.gridExport);
-                    const nowExporting = ['battery_ok', 'pv_only'].includes(gridExportSel.value);
+                    const nowExporting = ['battery_ok', 'pv_only'].includes(radio.value);
                     if (nowExporting && !wasExporting) {
                         const ok = await confirmDialog({
                             title: 'Enable grid export?',
@@ -4209,17 +4510,27 @@
                             danger: false,
                         });
                         if (!ok) {
-                            gridExportSel.value = controlInitial.gridExport || 'never';
+                            setRadioValue('control-grid-export', controlInitial.gridExport || 'never');
                             return;
                         }
                     }
                     controlTouched.gridExport = true;
+                    controlPending.gridExport = true;
                     controlDirty = true;
+                    setFieldPending('control-grid-export-field', true);
                     updateReserve0Warning();
                     updateDirtyHint();
                 });
-            }
+            });
             // Info icons open the same dialogs read-only for reference.
+            const modeInfo = document.getElementById('control-mode-info');
+            if (modeInfo) modeInfo.addEventListener('click', () => {
+                confirmDialog({ title: 'Operating modes', body: MODE_INFO, confirmLabel: 'Got it', info: true });
+            });
+            const reserveInfo = document.getElementById('control-reserve-info');
+            if (reserveInfo) reserveInfo.addEventListener('click', () => {
+                confirmDialog({ title: 'Backup reserve', body: RESERVE_INFO, confirmLabel: 'Got it', info: true });
+            });
             const gridChargingInfo = document.getElementById('control-grid-charging-info');
             if (gridChargingInfo) gridChargingInfo.addEventListener('click', () => {
                 confirmDialog({ title: 'Grid charging eligibility', body: GRID_CHARGE_INFO, confirmLabel: 'Got it', danger: false });
@@ -4227,6 +4538,10 @@
             const gridExportInfo = document.getElementById('control-grid-export-info');
             if (gridExportInfo) gridExportInfo.addEventListener('click', () => {
                 confirmDialog({ title: 'Grid export eligibility (PTO)', body: PTO_INFO, confirmLabel: 'Got it', danger: false });
+            });
+            const tokenInfo = document.getElementById('control-token-info');
+            if (tokenInfo) tokenInfo.addEventListener('click', () => {
+                confirmDialog({ title: 'Control token', body: TOKEN_INFO, confirmLabel: 'Got it', info: true });
             });
             const saveBtn = document.getElementById('control-save');
             if (saveBtn) saveBtn.addEventListener('click', saveControl);
@@ -4313,7 +4628,7 @@
             loadAlerts();
             loadStrings();
             loadStats();
-            loadControlValues(true);
+            loadControlValues();
             loadGridStatus();
             loadPowerwalls();
             loadGateways();
