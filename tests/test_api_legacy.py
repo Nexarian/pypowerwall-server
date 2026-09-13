@@ -385,6 +385,78 @@ def test_control_grid_charging_non_boolean_value_returns_400(
     assert response.status_code == 400
 
 
+@pytest.mark.parametrize("value", ["battery_ok", "pv_only", "never"])
+def test_control_grid_export_routes_to_cloud(
+    control_client, connected_gateway, value
+):
+    """POST /control/grid_export uses cloud_control when available."""
+    from app.core.gateway_manager import gateway_manager
+
+    mock_cloud = Mock()
+    mock_cloud.set_grid_export.return_value = {"result": "Updated"}
+    gateway_manager._cloud_control = mock_cloud
+
+    response = control_client.post(
+        "/control/grid_export",
+        json={"value": value},
+        headers={"Authorization": _CONTROL_TOKEN},
+    )
+
+    assert response.status_code == 200
+    mock_cloud.set_grid_export.assert_called_once_with(value)
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {},
+        {"value": "bogus"},
+        {"value": "PV_ONLY"},
+        {"value": "battery-ok"},
+        {"value": True},
+        {"value": 1},
+        {"value": None},
+    ],
+)
+def test_control_grid_export_invalid_value_returns_400(
+    control_client, connected_gateway, payload
+):
+    """POST /control/grid_export rejects anything but the three policies.
+
+    An unchecked value must never reach the raw-POST fallback below the
+    control map, which would forward it to the gateway.
+    """
+    from app.core.gateway_manager import gateway_manager
+
+    mock_cloud = Mock()
+    gateway_manager._cloud_control = mock_cloud
+
+    response = control_client.post(
+        "/control/grid_export",
+        json=payload,
+        headers={"Authorization": _CONTROL_TOKEN},
+    )
+
+    assert response.status_code == 400
+    mock_cloud.set_grid_export.assert_not_called()
+
+
+def test_control_grid_export_fallback_without_cloud_uses_local(
+    control_client, connected_gateway, mock_pypowerwall
+):
+    """POST /control/grid_export without cloud calls set_grid_export()."""
+    mock_pypowerwall.set_grid_export.return_value = {"result": "Updated"}
+
+    response = control_client.post(
+        "/control/grid_export",
+        json={"value": "never"},
+        headers={"Authorization": _CONTROL_TOKEN},
+    )
+
+    assert response.status_code == 200
+    mock_pypowerwall.set_grid_export.assert_called_once_with("never")
+
+
 def test_control_cloud_returns_none_gives_503(
     control_client, connected_gateway, monkeypatch
 ):
@@ -737,6 +809,105 @@ def test_api_operation_defaults_when_neither_mode_available(client, connected_ga
     assert response.status_code == 200
     data = response.json()
     assert data["real_mode"] is None  # unavailable, not fabricated
+
+
+def test_api_operation_returns_cached_grid_charging(client, connected_gateway):
+    """Test /api/operation returns the polled cached grid_charging value."""
+    connected_gateway.data.grid_charging = True
+
+    response = client.get("/api/operation")
+    assert response.status_code == 200
+    assert response.json()["grid_charging"] is True
+
+
+def test_api_operation_grid_charging_false_is_a_state_not_unknown(
+    client, connected_gateway
+):
+    """Test /api/operation keeps grid_charging=False distinct from null.
+
+    False means "charging from grid disabled" — a real state that must not
+    collapse into None ("unavailable") via falsy checks.
+    """
+    connected_gateway.data.grid_charging = False
+
+    response = client.get("/api/operation")
+    assert response.status_code == 200
+    assert response.json()["grid_charging"] is False
+
+
+def test_api_operation_grid_charging_null_when_unavailable(
+    client, connected_gateway
+):
+    """When grid charging was never observed (TEDAPI-only without cloud),
+    /api/operation must report null — not a fabricated False.
+    """
+    connected_gateway.data.grid_charging = None
+
+    response = client.get("/api/operation")
+    assert response.status_code == 200
+    assert response.json()["grid_charging"] is None
+
+
+def test_api_operation_serves_stale_cloud_grid_charging(client, connected_gateway):
+    """Hybrid cloud link down after having been up: last known grid charging,
+    marked stale with its fetch time — same contract as mode/reserve (#87).
+    """
+    from app.core.gateway_manager import gateway_manager
+
+    connected_gateway.data.grid_charging = None
+    gateway_manager._cloud_control = Mock()
+    gateway_manager._cloud_control_configured = True
+    gateway_manager._cloud_grid_charging = False
+    gateway_manager._cloud_grid_charging_time = 1759100002.0
+
+    response = client.get("/api/operation")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["grid_charging"] is False
+    assert data["stale"] is True
+    assert data["last_updated"] == 1759100002.0
+
+
+def test_api_operation_returns_cached_grid_export(client, connected_gateway):
+    """Test /api/operation returns the polled cached grid export policy."""
+    connected_gateway.data.grid_export = "pv_only"
+
+    response = client.get("/api/operation")
+    assert response.status_code == 200
+    assert response.json()["grid_export"] == "pv_only"
+
+
+def test_api_operation_grid_export_null_when_unavailable(
+    client, connected_gateway
+):
+    """When the export policy was never observed (TEDAPI-only without cloud),
+    /api/operation must report null — not a fabricated default.
+    """
+    connected_gateway.data.grid_export = None
+
+    response = client.get("/api/operation")
+    assert response.status_code == 200
+    assert response.json()["grid_export"] is None
+
+
+def test_api_operation_serves_stale_cloud_grid_export(client, connected_gateway):
+    """Hybrid cloud link down after having been up: last known export policy,
+    marked stale with its fetch time — same contract as mode/reserve (#87).
+    """
+    from app.core.gateway_manager import gateway_manager
+
+    connected_gateway.data.grid_export = None
+    gateway_manager._cloud_control = Mock()
+    gateway_manager._cloud_control_configured = True
+    gateway_manager._cloud_grid_export = "never"
+    gateway_manager._cloud_grid_export_time = 1759100003.0
+
+    response = client.get("/api/operation")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["grid_export"] == "never"
+    assert data["stale"] is True
+    assert data["last_updated"] == 1759100003.0
 
 
 # ---------------------------------------------------------------------------

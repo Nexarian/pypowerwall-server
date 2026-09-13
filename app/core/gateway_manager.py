@@ -216,6 +216,10 @@ class GatewayManager:
         self._cloud_mode_time: Optional[float] = None
         self._cloud_reserve: Optional[float] = None
         self._cloud_reserve_time: Optional[float] = None
+        self._cloud_grid_charging: Optional[bool] = None
+        self._cloud_grid_charging_time: Optional[float] = None
+        self._cloud_grid_export: Optional[str] = None
+        self._cloud_grid_export_time: Optional[float] = None
 
     @staticmethod
     def _expected_battery_block_count(data: Optional[PowerwallData]) -> int:
@@ -885,6 +889,12 @@ class GatewayManager:
         # Console kept showing a mode from a previous control write). Hybrid mode
         # refreshes from the cloud control connection below instead.
         last_data = self._last_successful_data.get(gateway_id)
+        # Grid charging/export are deliberately NOT pre-filled here: unlike
+        # mode (locally re-polled every cycle), these can be cloud-sourced on
+        # TEDAPI (no local endpoint), so a pre-filled value would serve an old
+        # cloud reading as fresh once the cloud link drops. /api/operation
+        # already serves the timestamped _cloud_grid_* fallback stale-marked
+        # instead — same no-silent-freeze contract as mode/reserve (#87).
         if last_data and last_data.mode and not basic_lan:
             data.mode = last_data.mode
         if basic_lan:
@@ -919,6 +929,41 @@ class GatewayManager:
                     logger.debug(
                         f"Reserve not available via cloud control for {gateway_id}: {e}"
                     )
+                try:
+                    # Supplementary read: must not disturb the cloud-link
+                    # health counters (issue #87) — those stay driven by the
+                    # mode/reserve path so failure thresholds keep their
+                    # 2-calls-per-cycle semantics.
+                    grid_func = getattr(self._cloud_control, "get_grid_charging", None)
+                    if grid_func is not None:
+                        cloud_grid_charging = await asyncio.wait_for(
+                            loop.run_in_executor(self._executor, grid_func),
+                            timeout=step_timeout,
+                        )
+                        if isinstance(cloud_grid_charging, bool):
+                            data.grid_charging = cloud_grid_charging
+                            self._cloud_grid_charging = cloud_grid_charging
+                            self._cloud_grid_charging_time = time.time()
+                except (asyncio.TimeoutError, Exception) as e:
+                    logger.debug(
+                        f"Grid charging not available via cloud control for {gateway_id}: {e}"
+                    )
+                try:
+                    # Same supplementary-read contract as grid charging above.
+                    export_func = getattr(self._cloud_control, "get_grid_export", None)
+                    if export_func is not None:
+                        cloud_grid_export = await asyncio.wait_for(
+                            loop.run_in_executor(self._executor, export_func),
+                            timeout=step_timeout,
+                        )
+                        if isinstance(cloud_grid_export, str) and cloud_grid_export:
+                            data.grid_export = cloud_grid_export
+                            self._cloud_grid_export = cloud_grid_export
+                            self._cloud_grid_export_time = time.time()
+                except (asyncio.TimeoutError, Exception) as e:
+                    logger.debug(
+                        f"Grid export unavailable via cloud for {gateway_id}: {e}"
+                    )
         if not basic_lan:
             try:
                 data.mode = await asyncio.wait_for(
@@ -941,6 +986,60 @@ class GatewayManager:
             except (asyncio.TimeoutError, Exception) as e:
                 logger.debug(
                     f"Reserve/time remaining not available for {gateway_id}: {e}"
+                )
+
+            # Grid charging: local TEDAPI has no endpoint (returns None) —
+            # fall back to the hybrid cloud connection when local is
+            # unavailable so TEDAPI+cloud setups still show the real state.
+            # Read directly (not via cloud_control()) so this supplementary
+            # read leaves the cloud-link health counters untouched.
+            try:
+                local_grid_charging = await asyncio.wait_for(
+                    loop.run_in_executor(self._executor, pw.get_grid_charging),
+                    timeout=step_timeout,
+                )
+                if isinstance(local_grid_charging, bool):
+                    data.grid_charging = local_grid_charging
+                elif local_grid_charging is None and self._cloud_control is not None:
+                    grid_func = getattr(self._cloud_control, "get_grid_charging", None)
+                    if grid_func is not None:
+                        cloud_grid_charging = await asyncio.wait_for(
+                            loop.run_in_executor(self._executor, grid_func),
+                            timeout=step_timeout,
+                        )
+                        if isinstance(cloud_grid_charging, bool):
+                            data.grid_charging = cloud_grid_charging
+                            self._cloud_grid_charging = cloud_grid_charging
+                            self._cloud_grid_charging_time = time.time()
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(
+                    f"Grid charging not available for {gateway_id}: {e}"
+                )
+
+            # Grid export policy: same TEDAPI limitation and hybrid fallback
+            # as grid charging above. Only real strings are cached — the
+            # library contract is str | None.
+            try:
+                local_grid_export = await asyncio.wait_for(
+                    loop.run_in_executor(self._executor, pw.get_grid_export),
+                    timeout=step_timeout,
+                )
+                if isinstance(local_grid_export, str) and local_grid_export:
+                    data.grid_export = local_grid_export
+                elif local_grid_export is None and self._cloud_control is not None:
+                    export_func = getattr(self._cloud_control, "get_grid_export", None)
+                    if export_func is not None:
+                        cloud_grid_export = await asyncio.wait_for(
+                            loop.run_in_executor(self._executor, export_func),
+                            timeout=step_timeout,
+                        )
+                        if isinstance(cloud_grid_export, str) and cloud_grid_export:
+                            data.grid_export = cloud_grid_export
+                            self._cloud_grid_export = cloud_grid_export
+                            self._cloud_grid_export_time = time.time()
+            except (asyncio.TimeoutError, Exception) as e:
+                logger.debug(
+                    f"Grid export not available for {gateway_id}: {e}"
                 )
 
             # Try to get system status for /pod endpoint (for caching)
@@ -1788,9 +1887,10 @@ class GatewayManager:
             degraded    - connection live but recent calls failing
             unavailable - never connected, or failures >= threshold
 
-        Also carries the last known cloud-sourced mode/reserve with their
-        fetch timestamps, so consumers can serve stale-marked values when
-        the cloud link drops after having been up.
+        Also carries the last known cloud-sourced mode/reserve/grid-charging/
+        grid-export values with their fetch timestamps, so consumers can
+        serve stale-marked values when the cloud link drops after having
+        been up.
         """
         if not self._cloud_control_configured:
             return None
@@ -1813,6 +1913,10 @@ class GatewayManager:
             "last_known_mode_time": self._cloud_mode_time,
             "last_known_reserve": self._cloud_reserve,
             "last_known_reserve_time": self._cloud_reserve_time,
+            "last_known_grid_charging": self._cloud_grid_charging,
+            "last_known_grid_charging_time": self._cloud_grid_charging_time,
+            "last_known_grid_export": self._cloud_grid_export,
+            "last_known_grid_export_time": self._cloud_grid_export_time,
         }
 
     async def cloud_control(

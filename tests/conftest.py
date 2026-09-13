@@ -32,6 +32,10 @@ def _reset_singleton_state():
     gateway_manager._cloud_mode_time = None
     gateway_manager._cloud_reserve = None
     gateway_manager._cloud_reserve_time = None
+    gateway_manager._cloud_grid_charging = None
+    gateway_manager._cloud_grid_charging_time = None
+    gateway_manager._cloud_grid_export = None
+    gateway_manager._cloud_grid_export_time = None
     gateway_manager._executor = None
     gateway_manager._write_lock = asyncio.Lock()
     gateway_manager._islanding_futures.clear()

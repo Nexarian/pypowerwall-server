@@ -15,9 +15,9 @@ The **Energy** panel toggles between **Energy Summary** (current kW totals) and 
 
 <img alt="PyPowerwall Server Console - Trend" src="https://github.com/user-attachments/assets/3fac475e-aebd-46a8-8c2d-8c4d294b2360" />
 
-The **Control** panel allows you to manage the Powerwall's operation mode, reserve percentage, and grid charging settings. Requires setting the `PW_CONTROL_SECRET` environment variable.
+The **Control** panel allows you to manage the Powerwall's operation mode, reserve percentage, grid charging (with eligibility warnings) and grid export (with PTO confirmation). Requires setting the `PW_CONTROL_SECRET` environment variable.
 
-<img alt="PyPowerwall Server Console - Control" src="https://github.com/user-attachments/assets/5a2bb9ee-78f6-440e-97e6-407fbfa720f7" />
+<img alt="PyPowerwall Server Console - Control" src="https://github.com/user-attachments/assets/2f33dc25-8f9c-412c-893f-087d6ba9c57d" />
 
 The **MQTT** panel shows the live MQTT settings if the `PW_MQTT_BROKER` environment variable is set.
 
@@ -734,21 +734,54 @@ timeout, the outcome may be unknown and the command may still complete; do not
 automatically retry or send the opposite command.
 
 **Web Console (`/console`):** when `PW_CONTROL_SECRET` is set, the Console shows
-a *Powerwall Control* card (after System Health) with mode select
-(Self-Consumption/Backup/Time-Based), reserve slider + number (0–100) and a
-token field (kept in the tab by default, optional “Remember my token on this
-device” persists it in `localStorage`; sent as `Authorization: Bearer <token>`
-per request).
+a *Powerwall Control* card (after System Health) grouped into bordered
+sub-panels: **Authorization Token** (kept in the tab by default; optional
+“Remember my token on this device” persists it in `localStorage`; sent as
+`Authorization: Bearer <token>` per request), **Operating Mode** and **Battery**
+side by side (a mode radio group—Self-Consumption/Backup/Time-Based—and the
+backup reserve slider + number, 0–100), and **Grid** (grid connection status, a
+grid charging toggle, a grid export radio group—Everything/Solar/Never, labeled
+to match the Tesla app; the API values remain `battery_ok`/`pv_only`/`never`—
+and the Go Off Grid/Reconnect Grid action in the same row, kept in its own
+highlighted panel since it is the one destructive control). Each control always
+reflects the live state — there is no separate "Now:" readout — and a control
+the user just changed stays highlighted until the next poll confirms the
+gateway applied it.
 Availability is checked via unauthenticated `GET /control/status`
-(`{"enabled": bool}`); current values come from `GET /api/operation`. One Save
+(`{"enabled": bool}`); current values come from `GET /api/operation` (which
+also reports `grid_charging` and `grid_export`, `null` when unavailable e.g.
+TEDAPI-only without
+cloud). One Save
 button sends a single combined `POST /control/mode {"value": mode, "level":
 reserve}` when both changed (reserve 0 + mode change is auto-split into two
 calls, see note above), otherwise a single `/control/reserve` or `/control/mode`
-call. Controls the default gateway.
+call, plus separate `POST /control/grid_charging {"value": true/false}` and
+`POST /control/grid_export {"value": "battery_ok"|"pv_only"|"never"}` calls when
+grid charging or export changed. Controls the default gateway.
+
+**Grid charging / export eligibility:** enabling grid charging, or moving grid
+export from *Never* to an exporting option, pops a confirmation dialog and has
+an info icon for reference. Enable grid export only when your utility has
+approved your system to export electricity — often called *Permission to
+Operate* (PTO). Only enable grid charging if your utility rate plan and local
+rules allow it. If you claim the U.S. federal Investment Tax Credit (ITC):
+batteries placed in service before 2023 were required to charge exclusively
+from solar, and the Inflation Reduction Act removed that restriction for
+systems placed in service from 2023 on — verify how grid charging affects
+your credit before enabling it. Rules for residential battery storage —
+grid charging, grid export, and system operation — also differ between
+countries and regions (for example, between EU Member States and their
+local grid-connection requirements). pypowerwall-server does not determine
+or enforce regulatory compliance: you are responsible for ensuring that
+your configuration and use of these controls complies with the regulations
+applicable to your installation and jurisdiction. Reference links:
+[IRS Residential Clean Energy Credit](https://www.irs.gov/credits-deductions/residential-clean-energy-credit)
+and [DSIRE](https://www.dsireusa.org/) for state/local incentives and rules.
 
 For a local PW3 v1r/TEDAPI gateway, the card also shows the cached grid state
 and enables exactly one islanding action: **Go Off Grid** while connected or
-**Reconnect Grid** while islanded. Each action requires a browser confirmation.
+**Reconnect Grid** while islanded. The islanding section is hidden entirely
+on gateways without a local v1r connection. Each action requires a browser confirmation.
 After any request, both islanding controls are locked for one minute, including
 after an error or timeout, because the outcome may be unknown. Use **Refresh
 Grid Status** and verify the reported state after the polling interval; an

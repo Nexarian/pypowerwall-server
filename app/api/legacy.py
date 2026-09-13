@@ -239,6 +239,7 @@ async def control_api(
     # Same for reserve and mode: an empty or typoed payload must never
     # silently drain the backup reserve to 0 or flip the operating mode.
     valid_modes = ["self_consumption", "backup", "autonomous"]
+    valid_grid_exports = ["battery_ok", "pv_only", "never"]
 
     if path == "reserve":
         value = data.get("value")
@@ -258,6 +259,17 @@ async def control_api(
             raise HTTPException(
                 status_code=400,
                 detail="'value' must be a valid mode: " + ", ".join(valid_modes),
+            )
+
+    # Grid export accepts only the three library-documented policies —
+    # anything else (including booleans) must never reach the raw-POST
+    # fallback below, which would forward it to the gateway unchecked.
+    if path == "grid_export":
+        if data.get("value") not in valid_grid_exports:
+            raise HTTPException(
+                status_code=400,
+                detail="'value' must be a valid grid export mode: "
+                + ", ".join(valid_grid_exports),
             )
 
     # Optional companion parameters for combined reserve+mode writes.
@@ -336,6 +348,7 @@ async def control_api(
         "reserve": ("set_reserve", lambda d: [d["value"]]),
         "mode": ("set_mode", lambda d: [d["value"]]),
         "grid_charging": ("set_grid_charging", lambda d: [d["value"]]),
+        "grid_export": ("set_grid_export", lambda d: [d["value"]]),
     }
 
     if path in control_map:
@@ -1363,7 +1376,7 @@ async def get_api_site_name():
 
 @router.get("/api/operation")
 async def get_api_operation():
-    """Get operation mode and backup reserve - API format (legacy proxy endpoint).
+    """Get operation mode, backup reserve and grid charging - API format (legacy proxy endpoint).
 
     Uses graceful degradation: returns cached data even if gateway is temporarily offline.
 
@@ -1375,6 +1388,10 @@ async def get_api_operation():
         "self_consumption" - Self-Powered mode
         "backup"           - Backup-Only mode
         "autonomous"       - Time-Based Control mode
+
+    Grid charging is polled via pw.get_grid_charging() with a hybrid cloud
+    fallback (TEDAPI has no local endpoint). None means unavailable.
+    Grid export policy is polled the same way via pw.get_grid_export().
     """
     gateway_id = get_default_gateway()
     status = gateway_manager.get_gateway(gateway_id)
@@ -1387,6 +1404,8 @@ async def get_api_operation():
     # the real fallbacks for gateways that can provide them.
     real_mode = None
     backup_reserve_percent = None
+    grid_charging = None
+    grid_export = None
     stale = False
     last_updated = None
 
@@ -1403,13 +1422,24 @@ async def get_api_operation():
             if mode:
                 real_mode = mode
 
+        if status.data.grid_charging is not None:
+            grid_charging = status.data.grid_charging
+
+        if status.data.grid_export:
+            grid_export = status.data.grid_export
+
     # Hybrid stale fallback (issue #87): Basic LAN has no local mode/reserve
     # endpoint, so when the cloud link drops the values above go null. Serve
     # the last known cloud value explicitly marked stale — with its fetch
     # time — instead of either fabricating a default or silently freezing
     # the previous reading. When no cloud value was ever seen, null stands
     # and consumers render "unavailable".
-    if real_mode is None or backup_reserve_percent is None:
+    if (
+        real_mode is None
+        or backup_reserve_percent is None
+        or grid_charging is None
+        or grid_export is None
+    ):
         cloud_link = gateway_manager.cloud_link_status()
         if cloud_link:
             times = []
@@ -1426,12 +1456,27 @@ async def get_api_operation():
                 stale = True
                 if cloud_link["last_known_reserve_time"]:
                     times.append(cloud_link["last_known_reserve_time"])
+            if (
+                grid_charging is None
+                and cloud_link.get("last_known_grid_charging") is not None
+            ):
+                grid_charging = cloud_link["last_known_grid_charging"]
+                stale = True
+                if cloud_link.get("last_known_grid_charging_time"):
+                    times.append(cloud_link["last_known_grid_charging_time"])
+            if grid_export is None and cloud_link.get("last_known_grid_export") is not None:
+                grid_export = cloud_link["last_known_grid_export"]
+                stale = True
+                if cloud_link.get("last_known_grid_export_time"):
+                    times.append(cloud_link["last_known_grid_export_time"])
             if times:
                 last_updated = max(times)
 
     return {
         "real_mode": real_mode,
         "backup_reserve_percent": backup_reserve_percent,
+        "grid_charging": grid_charging,
+        "grid_export": grid_export,
         "stale": stale,
         "last_updated": last_updated,
     }
