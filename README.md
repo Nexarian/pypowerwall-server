@@ -758,10 +758,12 @@ export from *Never* to an exporting option, pops a confirmation dialog and has
 an info icon for reference. Enable grid export only when your utility has
 approved your system to export electricity — often called *Permission to
 Operate* (PTO). Only enable grid charging if your utility rate plan and local
-rules allow it; if you claim the U.S. federal Investment Tax Credit (ITC), tax
-rules have historically required batteries to be charged exclusively from solar
-— verify how grid charging affects your credit before enabling it. You are
-responsible for compliance with your utility and tax rules. Reference links:
+rules allow it. If you claim the U.S. federal Investment Tax Credit (ITC):
+batteries placed in service before 2023 were required to charge exclusively
+from solar, and the Inflation Reduction Act removed that restriction for
+systems placed in service from 2023 on — verify how grid charging affects
+your credit before enabling it. You are responsible for compliance with your
+utility and tax rules. Reference links:
 [IRS Residential Clean Energy Credit](https://www.irs.gov/credits-deductions/residential-clean-energy-credit)
 and [DSIRE](https://www.dsireusa.org/) for state/local incentives and rules.
 
