@@ -889,12 +889,14 @@ class GatewayManager:
         # Console kept showing a mode from a previous control write). Hybrid mode
         # refreshes from the cloud control connection below instead.
         last_data = self._last_successful_data.get(gateway_id)
+        # Grid charging/export are deliberately NOT pre-filled here: unlike
+        # mode (locally re-polled every cycle), these can be cloud-sourced on
+        # TEDAPI (no local endpoint), so a pre-filled value would serve an old
+        # cloud reading as fresh once the cloud link drops. /api/operation
+        # already serves the timestamped _cloud_grid_* fallback stale-marked
+        # instead — same no-silent-freeze contract as mode/reserve (#87).
         if last_data and last_data.mode and not basic_lan:
             data.mode = last_data.mode
-        if last_data and last_data.grid_charging is not None and not basic_lan:
-            data.grid_charging = last_data.grid_charging
-        if last_data and last_data.grid_export and not basic_lan:
-            data.grid_export = last_data.grid_export
         if basic_lan:
             # Basic LAN local API does not expose operation mode/reserve. When a
             # hybrid cloud-control connection is available, refresh mode/reserve

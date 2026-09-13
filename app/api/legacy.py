@@ -1434,7 +1434,12 @@ async def get_api_operation():
     # time — instead of either fabricating a default or silently freezing
     # the previous reading. When no cloud value was ever seen, null stands
     # and consumers render "unavailable".
-    if real_mode is None or backup_reserve_percent is None or grid_charging is None or grid_export is None:
+    if (
+        real_mode is None
+        or backup_reserve_percent is None
+        or grid_charging is None
+        or grid_export is None
+    ):
         cloud_link = gateway_manager.cloud_link_status()
         if cloud_link:
             times = []

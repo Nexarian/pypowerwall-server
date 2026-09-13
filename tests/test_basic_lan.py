@@ -475,6 +475,63 @@ async def test_hybrid_poll_records_last_known_grid_values(
 
 
 @pytest.mark.asyncio
+async def test_tedapi_local_none_grid_falls_back_to_cloud_no_prefill(
+    mock_gateway_manager, mock_pypowerwall
+):
+    """TEDAPI gateway (basic_lan=False): local grid getters return None.
+
+    The cloud fallback supplies both values (data + last-known caches with
+    timestamps). A later cloud outage must leave data.grid_* unset — no
+    pre-fill from last_successful_data — so /api/operation serves the
+    timestamped _cloud_grid_* fallback stale-marked instead of presenting
+    an old cloud value as fresh.
+    """
+    import time
+
+    mock_pypowerwall.tedapi = None
+    mock_pypowerwall.get_mode.return_value = "self_consumption"
+    mock_pypowerwall.get_grid_charging.return_value = None
+    mock_pypowerwall.get_grid_export.return_value = None
+
+    mock_cloud = Mock()
+    mock_cloud.get_grid_charging.return_value = False
+    mock_cloud.get_grid_export.return_value = "battery_ok"
+    gateway_manager._cloud_control = mock_cloud
+    gateway_manager._cloud_control_configured = True
+
+    gw = Gateway(id="pw3-tedapi-grid", name="PW3", host="10.42.1.46", basic_lan=False)
+    gateway_manager.gateways["pw3-tedapi-grid"] = gw
+    gateway_manager.connections["pw3-tedapi-grid"] = mock_pypowerwall
+
+    before = time.time()
+    data = await gateway_manager._fetch_gateway_data(
+        "pw3-tedapi-grid", mock_pypowerwall
+    )
+
+    # Cloud fallback supplied both values; False must not read as "missing".
+    assert data.grid_charging is False
+    assert data.grid_export == "battery_ok"
+    assert gateway_manager._cloud_grid_charging is False
+    assert gateway_manager._cloud_grid_export == "battery_ok"
+    assert gateway_manager._cloud_grid_charging_time >= before
+    assert gateway_manager._cloud_grid_export_time >= before
+
+    # Simulate a cloud outage: local still unavailable, cloud now raises.
+    gateway_manager._last_successful_data["pw3-tedapi-grid"] = data
+    mock_cloud.get_grid_charging.side_effect = Exception("cloud down")
+    mock_cloud.get_grid_export.side_effect = Exception("cloud down")
+
+    after = await gateway_manager._fetch_gateway_data(
+        "pw3-tedapi-grid", mock_pypowerwall
+    )
+    assert after.grid_charging is None, "stale cloud value must not be pre-filled as fresh"
+    assert after.grid_export is None, "stale cloud value must not be pre-filled as fresh"
+    # Last-known caches retained for the stale-marked /api/operation fallback.
+    assert gateway_manager._cloud_grid_charging is False
+    assert gateway_manager._cloud_grid_export == "battery_ok"
+
+
+@pytest.mark.asyncio
 async def test_cloud_link_health_degrades_then_recovers(
     mock_gateway_manager, mock_pypowerwall
 ):
