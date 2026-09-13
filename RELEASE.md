@@ -2,7 +2,7 @@
 
 ## Version History
 
-### [0.6.6] - Upcoming
+### [0.6.6] - 2026-09-13
 
 **Added:**
 - **Console grid charging control** — the Powerwall Control card gains a Grid Charging toggle (not a dropdown, since it is a boolean) wired to the existing `POST /control/grid_charging` API. The current value comes from `GET /api/operation` (new `grid_charging` field, `null` when unavailable e.g. TEDAPI-only without cloud, with hybrid cloud fallback and stale marking like mode/reserve) and is saved via the card's single Save button with the same dirty-check, token and 401 hygiene as mode/reserve. Grid charging is sent as a separate call after mode/reserve, so a partial save names the completed steps instead of looking like a full one. Enabling grid charging requires a confirmation dialog (utility eligibility + U.S. ITC note) with an info icon for reference.
