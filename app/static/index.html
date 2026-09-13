@@ -3812,8 +3812,20 @@
                     updateDirtyHint();
                     return; // Dirty check: do not overwrite user input
                 }
-                if (mode && document.getElementById('control-mode')) {
-                    document.getElementById('control-mode').value = mode;
+                // Unknown-but-reported values stay visible as raw text, but
+                // the select is disabled and the initial is nulled: otherwise
+                // the default option would read as "changed" and a no-edit
+                // Save would silently overwrite the unknown state.
+                const modeKnown = !!modeMap[mode];
+                const modeSel = document.getElementById('control-mode');
+                if (modeSel) {
+                    if (modeKnown) {
+                        modeSel.value = mode;
+                    }
+                    // Null (e.g. Basic LAN without cloud) stays editable for
+                    // optimistic writes; only a reported-but-unknown value
+                    // locks the select (see gridExportKnown below).
+                    modeSel.disabled = mode !== null && !modeKnown;
                 }
                 if (reserve !== null) {
                     const slider = document.getElementById('control-reserve-slider');
@@ -3829,13 +3841,14 @@
                     gridChargingSel.disabled = gridCharging === null;
                 }
                 const gridExportSel = document.getElementById('control-grid-export');
+                const gridExportKnown = gridExport !== null && !!gridExportMap[gridExport];
                 if (gridExportSel) {
-                    if (gridExport !== null && gridExportMap[gridExport]) {
+                    if (gridExportKnown) {
                         gridExportSel.value = gridExport;
                     }
-                    gridExportSel.disabled = gridExport === null;
+                    gridExportSel.disabled = !gridExportKnown;
                 }
-                controlInitial = { mode, reserve, gridCharging, gridExport };
+                controlInitial = { mode: modeKnown ? mode : null, reserve, gridCharging, gridExport: gridExportKnown ? gridExport : null };
                 controlTouched = { mode: false, reserve: false, gridCharging: false, gridExport: false };
                 controlDirty = false;
                 updateReserve0Warning();
