@@ -2344,6 +2344,11 @@ async def get_stats():
     pw3_unknown = False  # a v1r gateway whose hardware isn't known yet
     tedapi_mode = None
     siteid = None
+    # Effective TEDAPI transport of the first TEDAPI gateway (active values
+    # once reported, else requested); falls back to the configured defaults
+    # when no gateway speaks TEDAPI. Mirrors the proxy's /stats fields.
+    tedapi_auth_mode = None
+    tedapi_api_version = None
 
     for gateway_id, gw in gateway_manager.gateways.items():
         status = gateway_manager.get_gateway(gateway_id)
@@ -2383,6 +2388,11 @@ async def get_stats():
         now = datetime.now().timestamp()
         backoff_remaining = max(0, int(next_poll - now))
 
+        transport = gateway_manager.tedapi_transport(gateway_id)
+        if tedapi_auth_mode is None and transport["auth_mode"]:
+            tedapi_auth_mode = transport["auth_mode"]
+            tedapi_api_version = transport["api_version"]
+
         gateway_statuses.append(
             {
                 "id": gateway_id,
@@ -2395,8 +2405,18 @@ async def get_stats():
                 else None,
                 "consecutive_failures": failures,
                 "backoff_seconds": backoff_remaining if failures > 0 else 0,
+                # Requested vs active TEDAPI transport (None for non-TEDAPI
+                # gateways; *_active is None until the first successful poll).
+                "tedapi_auth_mode": transport["requested_auth_mode"],
+                "tedapi_auth_mode_active": transport["active_auth_mode"],
+                "tedapi_api_version": transport["requested_api_version"],
+                "tedapi_api_version_active": transport["active_api_version"],
             }
         )
+
+    if tedapi_auth_mode is None:
+        tedapi_auth_mode = settings.tedapi_auth_mode
+        tedapi_api_version = settings.tedapi_api_version
 
     # Hybrid (local reads + cloud control) connection state. _cloud_control
     # is created/assigned on the event loop by the background init task and
@@ -2442,7 +2462,7 @@ async def get_stats():
         "PW_CACHE_FILE": "**********" if settings.cache_file else None,
         "PW_CONTROL_SECRET": "**********" if settings.control_secret else None,
         "PW_GW_PWD": "**********" if settings.pw_gw_pwd else None,
-        "PW_NEG_SOLAR": True,  # Always enabled in this implementation
+        "PW_NEG_SOLAR": settings.neg_solar,
         "PW_SUPPRESS_NETWORK_ERRORS": settings.suppress_network_errors,
         "PW_NETWORK_ERROR_RATE_LIMIT": settings.network_error_rate_limit,
         "PW_FAIL_FAST": settings.fail_fast,
@@ -2451,6 +2471,8 @@ async def get_stats():
         "PW_CACHE_TTL": settings.cache_ttl,
         "PW_TEDAPI_RECOVERY": settings.tedapi_recovery,
         "PW_TEDAPI_PROBE_INTERVAL": settings.tedapi_probe_interval,
+        "PW_TEDAPI_AUTH_MODE": settings.tedapi_auth_mode,
+        "PW_TEDAPI_API_VERSION": settings.tedapi_api_version,
     }
 
     # Build connection health section
@@ -2500,6 +2522,8 @@ async def get_stats():
         "cloud_control": cloud_link,
         "pw3": True if pw3 else (None if pw3_unknown else False),
         "tedapi_mode": tedapi_mode,
+        "tedapi_auth_mode": tedapi_auth_mode,
+        "tedapi_api_version": tedapi_api_version,
         "siteid": siteid,
         "counter": 0,  # Legacy field, not used
         "cf": settings.cache_file,
