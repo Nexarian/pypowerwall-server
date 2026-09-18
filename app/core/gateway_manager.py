@@ -64,6 +64,7 @@ import asyncio
 import json
 import logging
 import math
+import re
 import time
 from copy import deepcopy
 from typing import Any, Dict, List, Optional
@@ -130,17 +131,8 @@ def _protobuf_version() -> Optional["tuple[int, ...]"]:
         from google.protobuf import __version__ as pb_version
     except Exception:  # pragma: no cover - protobuf is a pypowerwall dependency
         return None
-    parts = []
-    for piece in pb_version.split("."):
-        digits = ""
-        for ch in piece:
-            if not ch.isdigit():
-                break
-            digits += ch
-        if not digits:
-            break
-        parts.append(int(digits))
-    return tuple(parts) or None
+    match = re.match(r"\d+(?:\.\d+)*", pb_version)
+    return tuple(map(int, match.group().split("."))) if match else None
 
 # Methods that write gateway state and must not run concurrently.
 # set_operation() always writes backup_reserve_percent + real_mode together,
