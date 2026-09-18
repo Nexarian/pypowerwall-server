@@ -193,7 +193,7 @@ import json
 import logging
 import os
 from typing import List, Optional
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, model_validator
 from pydantic_settings import BaseSettings
 
 logger = logging.getLogger(__name__)
@@ -238,26 +238,11 @@ class GatewayConfig(BaseModel):
     fleetapi: bool = False
     type: str = "powerwall"  # "powerwall" | "inverter" (solar-only, no batteries)
     # TEDAPI transport overrides. None = inherit the global PW_TEDAPI_AUTH_MODE /
-    # PW_TEDAPI_API_VERSION defaults. Only normalised here (case/whitespace);
-    # the values are coerced against the pypowerwall enums - leniently, with a
-    # logged warning - when the gateway is registered, so a typo in one entry
-    # can never abort config loading.
+    # PW_TEDAPI_API_VERSION defaults. Validated at gateway registration
+    # (case-insensitively, falling back with a logged warning on a typo), never
+    # here, so a bad value in one entry cannot abort config loading.
     tedapi_auth_mode: Optional[str] = None  # "basic" | "bearer"
     tedapi_api_version: Optional[str] = None  # "V2024_06" | "V2026_06"
-
-    @field_validator("tedapi_auth_mode", mode="before")
-    @classmethod
-    def _normalise_auth_mode(cls, value):
-        if value is None:
-            return None
-        return str(value).strip().lower() or None
-
-    @field_validator("tedapi_api_version", mode="before")
-    @classmethod
-    def _normalise_api_version(cls, value):
-        if value is None:
-            return None
-        return str(value).strip().upper() or None
 
     @model_validator(mode="after")
     def _default_name_to_id(self):

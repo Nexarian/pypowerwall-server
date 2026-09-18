@@ -705,17 +705,18 @@ async def health_check():
         if is_online:
             online_count += 1
 
-        # TEDAPI transport (per-gateway analogue of the proxy /health
-        # "transport" block): active auth mode / API version once the client
-        # has reported them, otherwise the requested configuration. Both are
-        # None for gateways that do not speak TEDAPI (cloud, FleetAPI, Basic LAN).
-        transport = gateway_manager.tedapi_transport(gateway_id)
+        # TEDAPI transport: what the live client reports once it has, else
+        # the requested configuration (proxy /health "transport" analogue).
+        gw = gateway_manager.gateways[gateway_id]
+        gw_data = status.data if status else None
         detail = {
             "id": gateway_id,
             "online": is_online,
             "error": status.error if status and status.error else None,
-            "auth_mode": transport["auth_mode"],
-            "tedapi_api_version": transport["api_version"],
+            "auth_mode": (gw_data.tedapi_auth_mode if gw_data else None)
+            or gw.tedapi_auth_mode,
+            "tedapi_api_version": (gw_data.tedapi_api_version if gw_data else None)
+            or gw.tedapi_api_version,
         }
 
         gateway_details.append(detail)

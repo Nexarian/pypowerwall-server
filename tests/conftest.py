@@ -47,7 +47,6 @@ def _reset_singleton_state():
     gateway_manager._pending_configs.clear()
     gateway_manager._last_successful_data.clear()
     gateway_manager._preserve_stale_count.clear()
-    gateway_manager._transport_warned.clear()
     # Cancel any running probe tasks before clearing references
     for task in gateway_manager._probe_tasks.values():
         if hasattr(task, "cancel"):

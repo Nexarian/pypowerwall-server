@@ -402,7 +402,7 @@ gateways:
 - `wifi_host`: WiFi host IP for TEDAPI v1r WiFi fallback (default `192.168.91.1`; set this when your gateway's WiFi AP is on a different subnet, e.g. behind a travel router)
 - `tedapi_auth_mode`: TEDAPI auth transport — `basic` (gateway Wi-Fi AP, default) or `bearer` (wired LAN on solar-only gateways; not PW2 or PW3). Defaults to `PW_TEDAPI_AUTH_MODE`.
 - `tedapi_api_version`: TEDAPI query set — `V2024_06` (default) or `V2026_06` (Tesla-signed queries; needs `protobuf >= 6.33.6`). Defaults to `PW_TEDAPI_API_VERSION`.
-  - Precedence: per-gateway value → `PW_TEDAPI_*` environment default → library default. Unknown values log a warning and fall back (they never abort startup). pypowerwall only honours these in full TEDAPI mode (`host` + `gw_pwd`, no `password`); Basic LAN, hybrid (`gw_pwd` + `password`) and cloud gateways ignore them, and TEDAPI v1r rejects `bearer` — the server warns at registration in each of these cases. `/stats` and `/health` report the requested and active values per gateway.
+  - Precedence: per-gateway value → `PW_TEDAPI_*` environment default → library default. Unknown values log a warning and fall back (they never abort startup). pypowerwall only honours these in full TEDAPI mode (`host` + `gw_pwd`, no `password`); Basic LAN, hybrid (`gw_pwd` + `password`) and cloud gateways ignore them. `/stats` reports the requested and active values per gateway, so a request pypowerwall did not honour is visible there.
 
 ### Reverse Proxy / HTTPS Proxy
 
