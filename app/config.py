@@ -354,7 +354,7 @@ class Settings(BaseSettings):
     # TEDAPI transport defaults (same env names as the pypowerwall proxy).
     # Per-gateway `tedapi_auth_mode` / `tedapi_api_version` override these.
     #   auth mode:   "basic" (gateway Wi-Fi, default) | "bearer" (wired LAN on
-    #                PW2 / solar-only gateways; not supported on Powerwall 3)
+    #                solar-only gateways; not supported on Powerwall 2 or 3)
     #   api version: "V2024_06" (default) | "V2026_06" (Tesla-signed query set;
     #                needs protobuf >= 6.33.6 at runtime)
     tedapi_auth_mode: str = Field(default="basic", alias="PW_TEDAPI_AUTH_MODE")

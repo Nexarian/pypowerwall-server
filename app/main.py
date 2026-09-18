@@ -790,7 +790,7 @@ Environment Variables:
   PW_BIND_ADDRESS    Server bind address (default: 0.0.0.0)
   PW_CONFIG          Path to YAML/JSON configuration file
   PW_TEDAPI_AUTH_MODE     TEDAPI auth transport: basic | bearer (default: basic;
-                          bearer = wired-LAN access on PW2/solar-only gateways)
+                          bearer = wired-LAN access on solar-only gateways)
   PW_TEDAPI_API_VERSION   TEDAPI query set: V2024_06 | V2026_06 (default: V2024_06)
   PW_RATE_LIMIT_ENABLED         Enable per-IP rate limiting (default: false)
   PW_RATE_LIMIT_MAX_REQUESTS    Requests per window per IP (default: 1000)
@@ -828,7 +828,7 @@ For more information, visit: https://github.com/jasonacox/pypowerwall-server
         "--tedapi-auth-mode",
         dest="tedapi_auth_mode",
         choices=["basic", "bearer"],
-        help="TEDAPI auth transport (default: basic; bearer = wired-LAN PW2/solar-only)",
+        help="TEDAPI auth transport (default: basic; bearer = wired-LAN solar-only)",
     )
     parser.add_argument(
         "--tedapi-api-version",
