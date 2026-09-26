@@ -670,7 +670,7 @@ For example `MQTT_CONTROLS=15` enables everything except going off grid, which n
 
 ### Legacy Proxy Compatibility
 
-All existing proxy endpoints work unchanged:
+All existing proxy endpoints work unchanged with a single gateway. With several gateways in `PW_GATEWAYS` they describe the whole system in one document, so Powerwall-Dashboard/Telegraf can keep polling the same URLs: `/aggregates` and `/api/meters/aggregates` merge every gateway's meter readings (home load is `site + solar + battery`, since a second inverter without its own site CT reports `load = 0`), `/strings` keys become `A_<tag>`, `/freq` prefixes `ISLAND_*`/`METER_*`/`PVAC_*` fields with `<tag>_` and continues `PW<n>` numbering, `/alerts` and `/alerts/pw` prefix alert codes with `<tag>_`, `/temps/pw` and `/pod` continue `PW<n>` numbering, and `/soe` averages the gateways that report a battery level. `<tag>` is the gateway `name` (non-alphanumerics replaced by `_`), or the last three characters of the gateway id when no distinct name is set.
 
 **Core Data Endpoints:**
 - `GET /vitals` - Detailed system vitals

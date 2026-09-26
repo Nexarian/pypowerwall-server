@@ -57,9 +57,10 @@ Adding New Endpoints:
 import asyncio
 import logging
 import os
+import re
 import time
 from datetime import datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import psutil
 import pypowerwall
@@ -553,6 +554,66 @@ def get_default_gateway():
     raise HTTPException(status_code=503, detail="No gateways configured")
 
 
+# ---------------------------------------------------------------------------
+# Multi-gateway support for the legacy endpoints
+#
+# With one gateway every legacy endpoint returns that gateway's data exactly as
+# the original proxy did. With several gateways the endpoints describe the whole
+# system in one document, the way the multi-instance proxy fork did (one proxy
+# per gateway feeding the same InfluxDB measurement):
+#   /aggregates, /api/meters/aggregates  -> merged meter document (app.core.aggregation)
+#   /soe                                  -> average over gateways reporting a battery level
+#   /strings                              -> "A_<tag>", "B_<tag>", ... per gateway
+#   /freq                                 -> "<tag>_ISLAND_*", "<tag>_METER_*", "<tag>_PVAC_*",
+#                                            PW<n> numbering continues across gateways,
+#                                            grid_status = worst gateway
+#   /alerts, /alerts/pw                   -> "<tag>_<alert>"
+#   /temps/pw, /pod                       -> PW<n> numbering continues across gateways
+# <tag> is the gateway name from PW_GATEWAYS (sanitized for use in a field
+# name); without a distinct name the last three characters of the gateway id
+# are used, like the old proxy's DIN suffix.
+# ---------------------------------------------------------------------------
+_TAG_CLEAN = re.compile(r"[^A-Za-z0-9]+")
+
+
+def is_multi_gateway() -> bool:
+    """True when more than one gateway is configured."""
+    return len(gateway_manager.gateways) > 1
+
+
+def gateway_tag(status) -> str:
+    """Short label used to prefix/suffix per-gateway fields in multi-gateway mode."""
+    gw = status.gateway
+    if gw.name and gw.name != gw.id:
+        tag = _TAG_CLEAN.sub("_", gw.name).strip("_")
+        if tag:
+            return tag
+    return gw.id[-3:]
+
+
+def _legacy_statuses() -> list:
+    """Gateway statuses to serve a legacy endpoint from, in configured order.
+
+    All gateways in multi-gateway mode, otherwise just the default gateway.
+    Graceful degradation applies (cached data while a gateway is offline).
+    Entries without data are skipped.
+    """
+    if is_multi_gateway():
+        ids = list(gateway_manager.gateways.keys())
+    else:
+        ids = [get_default_gateway()]
+    statuses = []
+    for gateway_id in ids:
+        status = gateway_manager.get_gateway(gateway_id)
+        if status and status.data:
+            statuses.append(status)
+    return statuses
+
+
+def _prefixed(key: str, tag: Optional[str]) -> str:
+    return f"{tag}_{key}" if tag else key
+
+
 # Login cookie max-age: 10 years for long-running kiosk dashboards
 _AUTH_COOKIE_MAX_AGE = 10 * 365 * 24 * 60 * 60  # 315360000 seconds
 
@@ -616,7 +677,18 @@ async def get_strings():
 
     Uses graceful degradation: returns cached data even if gateway is temporarily offline.
     Returns empty object if no data available yet.
+
+    Multi-gateway: every gateway's strings are returned, keyed "<string>_<tag>"
+    (e.g. "A_1JG", "A_KW7") so two gateways' string "A" do not collide.
     """
+    if is_multi_gateway():
+        merged: Dict[str, Any] = {}
+        for status in _legacy_statuses():
+            tag = gateway_tag(status)
+            for name, values in (status.data.strings or {}).items():
+                merged[f"{name}_{tag}"] = values
+        return merged
+
     gateway_id = get_default_gateway()
     status = gateway_manager.get_gateway(gateway_id)
 
@@ -624,8 +696,6 @@ async def get_strings():
         return {}
 
     return status.data.strings or {}
-
-
 @router.get("/aggregates")
 async def get_aggregates():
     """Get aggregates data (legacy proxy endpoint).
@@ -633,8 +703,14 @@ async def get_aggregates():
     Uses graceful degradation: returns cached data even if gateway is temporarily offline.
     Returns empty object if no data available yet.
 
+    Multi-gateway: the meter documents of all gateways are merged into one
+    system-wide document (see app.core.aggregation).
+
     Note: Negative solar correction (PW_NEG_SOLAR) is applied at fetch time in gateway_manager.
     """
+    if is_multi_gateway():
+        return gateway_manager.get_combined_aggregates()
+
     gateway_id = get_default_gateway()
     status = gateway_manager.get_gateway(gateway_id)
 
@@ -642,15 +718,25 @@ async def get_aggregates():
         return {}
 
     return status.data.aggregates
-
-
 @router.get("/soe")
 async def get_soe():
     """Get state of energy (legacy proxy endpoint).
 
     Uses graceful degradation: returns cached data even if gateway is temporarily offline.
     Returns Tesla-scaled percentage plus the preserved raw percentage if available.
+
+    Multi-gateway: simple average over the gateways that report a battery level
+    (solar-only gateways do not), null when none does.
     """
+    if is_multi_gateway():
+        statuses = _legacy_statuses()
+        soe = [s.data.soe for s in statuses if s.data.soe is not None]
+        soe_raw = [s.data.soe_raw for s in statuses if s.data.soe_raw is not None]
+        return {
+            "percentage": sum(soe) / len(soe) if soe else None,
+            "raw_percentage": sum(soe_raw) / len(soe_raw) if soe_raw else None,
+        }
+
     gateway_id = get_default_gateway()
     status = gateway_manager.get_gateway(gateway_id)
 
@@ -661,30 +747,19 @@ async def get_soe():
         "percentage": status.data.soe,
         "raw_percentage": status.data.soe_raw,
     }
+def _grid_status_numeric(status) -> int:
+    """Grid status as the proxy reported it: 1 = UP, 0 = DOWN (or unknown)."""
+    return 1 if status.data.grid_status == "UP" else 0
 
 
-@router.get("/freq")
-async def get_freq():
-    """Get frequency, current, voltage and grid status data (legacy proxy endpoint).
+def _freq_fields(status, pw_start: int = 1, tag: Optional[str] = None) -> Tuple[Dict[str, Any], int]:
+    """Build the /freq fields for one gateway.
 
-    Returns comprehensive data including:
-    - PW device names, frequencies, voltages
-    - Package part/serial numbers
-    - Power output metrics
-    - ISLAND and METER metrics
-    - Grid status
-
-    Note: Cloud mode may not support all fields. Local/TEDAPI mode provides most data.
-
-    Uses graceful degradation: returns cached data even if gateway is temporarily offline.
+    Powerwall entries are numbered from ``pw_start``; ISLAND/METER/PVAC fields are
+    prefixed with ``tag`` when given (multi-gateway mode). Returns the fields and
+    the number of Powerwalls found, so the caller can continue the numbering.
     """
-    gateway_id = get_default_gateway()
-    status = gateway_manager.get_gateway(gateway_id)
-
-    if not status or not status.data:
-        return {"freq": None}
-
-    fcv = {}
+    fcv: Dict[str, Any] = {}
     vitals = status.data.vitals or {}
     system_status = status.data.system_status or {}
 
@@ -737,7 +812,7 @@ async def get_freq():
         pw_serials = list(tepinv_map.keys())
 
     # --- Populate per-Powerwall fields ---
-    for idx, serial in enumerate(pw_serials, 1):
+    for idx, serial in enumerate(pw_serials, pw_start):
         block = ss_block_map.get(serial, {})
         tepinv_device, tepinv_data = tepinv_map.get(serial, (None, {}))
 
@@ -756,25 +831,64 @@ async def get_freq():
         fcv[f"PW{idx}_f_out"] = block.get("f_out")
         fcv[f"PW{idx}_i_out"] = block.get("i_out")
 
-    # ISLAND and METER metrics from Backup Gateway (TESYNC) or Backup Switch (TEMSA)
+    # ISLAND and METER metrics from Backup Gateway (TESYNC) or Backup Switch (TEMSA);
+    # inverter output frequency/voltage/fan speed from the PV inverter (PVAC)
     for device, d in vitals.items():
         if device.startswith("TESYNC") or device.startswith("TEMSA"):
             for i, value in d.items():
                 if i.startswith("ISLAND") or i.startswith("METER"):
-                    fcv[i] = value
+                    fcv[_prefixed(i, tag)] = value
+        elif device.startswith("PVAC"):
+            for i, value in d.items():
+                if i.startswith(("PVAC_Fout", "PVAC_VL", "PVAC_Fan_Speed")):
+                    fcv[_prefixed(i, tag)] = value
 
     # Fallback: if we have freq data but no device-specific data, include it
     if status.data.freq is not None and not any(k.startswith("PW") for k in fcv.keys()):
-        fcv["freq"] = status.data.freq
+        fcv[_prefixed("freq", tag)] = status.data.freq
 
-    # Add grid status (numeric: 1 = UP, 0 = DOWN)
-    if status.data.grid_status == "UP":
-        fcv["grid_status"] = 1
-    elif status.data.grid_status == "DOWN":
-        fcv["grid_status"] = 0
-    else:
-        fcv["grid_status"] = 0
+    return fcv, len(pw_serials)
 
+
+@router.get("/freq")
+async def get_freq():
+    """Get frequency, current, voltage and grid status data (legacy proxy endpoint).
+
+    Returns comprehensive data including:
+    - PW device names, frequencies, voltages
+    - Package part/serial numbers
+    - Power output metrics
+    - ISLAND and METER metrics (TESYNC/TEMSA) and PVAC inverter output metrics
+    - Grid status (numeric: 1 = UP, 0 = DOWN)
+
+    Note: Cloud mode may not support all fields. Local/TEDAPI mode provides most data.
+
+    Uses graceful degradation: returns cached data even if gateway is temporarily offline.
+
+    Multi-gateway: PW<n> numbering continues across gateways, ISLAND/METER/PVAC
+    fields are prefixed with the gateway tag ("1JG_PVAC_Fout"), and grid_status
+    is the worst of all gateways (0 if any gateway is off grid).
+    """
+    if is_multi_gateway():
+        fcv: Dict[str, Any] = {}
+        grid: List[int] = []
+        next_pw = 1
+        for status in _legacy_statuses():
+            fields, count = _freq_fields(status, next_pw, gateway_tag(status))
+            fcv.update(fields)
+            next_pw += count
+            grid.append(_grid_status_numeric(status))
+        fcv["grid_status"] = min(grid) if grid else 0
+        return fcv
+
+    gateway_id = get_default_gateway()
+    status = gateway_manager.get_gateway(gateway_id)
+
+    if not status or not status.data:
+        return {"freq": None}
+
+    fcv, _ = _freq_fields(status)
+    fcv["grid_status"] = _grid_status_numeric(status)
     return fcv
 
 
@@ -880,27 +994,31 @@ async def get_temps_pw():
     """Get Powerwall temperatures with simple keys (legacy proxy endpoint).
 
     Uses graceful degradation: returns cached temps even if gateway is temporarily offline.
-    """
-    gateway_id = get_default_gateway()
-    status = gateway_manager.get_gateway(gateway_id)
 
-    pwtemp = {}
-    if status and status.data and status.data.temps:
-        temps = status.data.temps
-        idx = 1
-        for i in temps:
-            key = f"PW{idx}_temp"
-            pwtemp[key] = temps[i]
+    Multi-gateway: PW<n> numbering continues across gateways.
+    """
+    pwtemp: Dict[str, Any] = {}
+    idx = 1
+    for status in _legacy_statuses():
+        for value in (status.data.temps or {}).values():
+            pwtemp[f"PW{idx}_temp"] = value
             idx += 1
     return pwtemp
-
-
 @router.get("/alerts")
 async def get_alerts():
     """Get Powerwall alerts (legacy proxy endpoint).
 
     Uses graceful degradation: returns cached alerts even if gateway is temporarily offline.
+
+    Multi-gateway: alerts of all gateways, each prefixed with its gateway tag.
     """
+    if is_multi_gateway():
+        alerts: List[str] = []
+        for status in _legacy_statuses():
+            tag = gateway_tag(status)
+            alerts.extend(f"{tag}_{alert}" for alert in (status.data.alerts or []))
+        return alerts
+
     gateway_id = get_default_gateway()
     status = gateway_manager.get_gateway(gateway_id)
 
@@ -908,24 +1026,21 @@ async def get_alerts():
         return []
 
     return status.data.alerts or []
-
-
 @router.get("/alerts/pw")
 async def get_alerts_pw():
     """Get Powerwall alerts in dictionary format (legacy proxy endpoint).
 
     Uses graceful degradation: returns cached alerts even if gateway is temporarily offline.
+
+    Multi-gateway: alerts of all gateways, each prefixed with its gateway tag.
     """
-    gateway_id = get_default_gateway()
-    status = gateway_manager.get_gateway(gateway_id)
-
-    pwalerts = {}
-    if status and status.data and status.data.alerts:
-        for alert in status.data.alerts:
-            pwalerts[alert] = 1
+    pwalerts: Dict[str, int] = {}
+    multi = is_multi_gateway()
+    for status in _legacy_statuses():
+        tag = gateway_tag(status) if multi else None
+        for alert in (status.data.alerts or []):
+            pwalerts[_prefixed(alert, tag)] = 1
     return pwalerts
-
-
 @router.get("/fans")
 async def get_fans():
     """Get fan speeds in raw format (legacy proxy endpoint).
@@ -1093,19 +1208,14 @@ async def get_tedapi_controller():
     return controller
 
 
-@router.get("/pod")
-async def get_pod():
-    """Get Powerwall battery data (legacy proxy endpoint).
+def _pod_fields(status, pw_start: int = 1) -> Tuple[Dict[str, Any], int]:
+    """Build the per-Powerwall /pod fields for one gateway.
 
-    Uses graceful degradation: returns cached data even if gateway is temporarily offline.
+    Powerwalls are numbered from ``pw_start``. Returns the fields and the number
+    of battery blocks found, so the caller can continue the numbering.
     """
-    gateway_id = get_default_gateway()
-    status = gateway_manager.get_gateway(gateway_id)
-
-    if not status or not status.data:
-        return {}
-
-    pod = {}
+    pod: Dict[str, Any] = {}
+    offset = pw_start - 1
 
     # Build a serial-number → block type lookup from cached TEDAPI config.
     # TEDAPI config battery_blocks carry a human-readable "type" field
@@ -1126,7 +1236,7 @@ async def get_pod():
         system_status, status.data.tedapi_config
     )
     if system_status and "battery_blocks" in system_status:
-        idx = 1
+        idx = pw_start
         for block in system_status["battery_blocks"]:
             # Initialize with None placeholders
             pod[f"PW{idx}_name"] = None
@@ -1143,9 +1253,9 @@ async def get_pod():
             pod[f"PW{idx}_POD_nom_energy_to_be_charged"] = None
             pod[f"PW{idx}_POD_nom_full_pack_energy"] = None
 
-            parent_idx = expansion_parent_indexes.get(idx)
+            parent_idx = expansion_parent_indexes.get(idx - offset)
             if parent_idx:
-                pod[f"PW{idx}_attached_to"] = f"PW{parent_idx}"
+                pod[f"PW{idx}_attached_to"] = f"PW{parent_idx + offset}"
 
             # System Status Data
             pod[f"PW{idx}_POD_nom_energy_remaining"] = block.get(
@@ -1200,7 +1310,7 @@ async def get_pod():
         
         # Match TEPOD vitals to battery blocks by serial number
         if system_status and "battery_blocks" in system_status:
-            for idx, block in enumerate(system_status["battery_blocks"], 1):
+            for idx, block in enumerate(system_status["battery_blocks"], pw_start):
                 serial = block.get("PackageSerialNumber")
                 if serial and serial in tepod_map:
                     device_name, v = tepod_map[serial]
@@ -1220,14 +1330,50 @@ async def get_pod():
                     pod[f"PW{idx}_POD_nom_energy_to_be_charged"] = v.get("POD_nom_energy_to_be_charged")
                     pod[f"PW{idx}_POD_nom_full_pack_energy"] = v.get("POD_nom_full_pack_energy")
 
+    count = len(system_status.get("battery_blocks") or []) if system_status else 0
+    return pod, count
+
+
+def _sum_or_none(values: List[Any]) -> Optional[float]:
+    numbers = [v for v in values if isinstance(v, (int, float)) and not isinstance(v, bool)]
+    return sum(numbers) if numbers else None
+
+
+@router.get("/pod")
+async def get_pod():
+    """Get Powerwall battery data (legacy proxy endpoint).
+
+    Uses graceful degradation: returns cached data even if gateway is temporarily offline.
+
+    Multi-gateway: PW<n> numbering continues across gateways; pack energies are
+    summed, time remaining is the shortest reported, backup reserve the first reported.
+    """
+    statuses = _legacy_statuses()
+    if not statuses:
+        return {}
+
+    pod: Dict[str, Any] = {}
+    next_pw = 1
+    for status in statuses:
+        fields, count = _pod_fields(status, next_pw)
+        pod.update(fields)
+        next_pw += count
+
     # Aggregate data from cached system_status
-    if system_status:
-        pod["nominal_full_pack_energy"] = system_status.get("nominal_full_pack_energy")
-        pod["nominal_energy_remaining"] = system_status.get("nominal_energy_remaining")
+    system_statuses = [s.data.system_status for s in statuses if s.data.system_status]
+    if system_statuses:
+        pod["nominal_full_pack_energy"] = _sum_or_none(
+            [ss.get("nominal_full_pack_energy") for ss in system_statuses]
+        )
+        pod["nominal_energy_remaining"] = _sum_or_none(
+            [ss.get("nominal_energy_remaining") for ss in system_statuses]
+        )
 
     # Use cached time_remaining and reserve (if available)
-    pod["time_remaining_hours"] = status.data.time_remaining if status.data.time_remaining is not None else None
-    pod["backup_reserve_percent"] = status.data.reserve if status.data.reserve is not None else None
+    remaining = [s.data.time_remaining for s in statuses if s.data.time_remaining is not None]
+    reserves = [s.data.reserve for s in statuses if s.data.reserve is not None]
+    pod["time_remaining_hours"] = min(remaining) if remaining else None
+    pod["backup_reserve_percent"] = reserves[0] if reserves else None
 
     return pod
 
@@ -1690,7 +1836,13 @@ async def get_api_aggregates():
 
     Uses graceful degradation: returns cached data even if gateway is temporarily offline.
     Returns empty object if no data available yet (e.g., during startup).
+
+    Multi-gateway: the meter documents of all gateways are merged into one
+    system-wide document (see app.core.aggregation).
     """
+    if is_multi_gateway():
+        return gateway_manager.get_combined_aggregates()
+
     gateway_id = get_default_gateway()
     status = gateway_manager.get_gateway(gateway_id)
 
@@ -1699,8 +1851,6 @@ async def get_api_aggregates():
         return {}
 
     return status.data.aggregates or {}
-
-
 @router.get("/api/meters/site")
 async def get_api_meters_site():
     """Get site meter hardware config - API format (legacy proxy endpoint).

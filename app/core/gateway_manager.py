@@ -75,6 +75,7 @@ import pypowerwall
 from pypowerwall.tedapi.api_version import TEDAPIApiVersion
 from pypowerwall.tedapi.auth_mode import AuthMode
 from app.models.gateway import Gateway, GatewayStatus, PowerwallData, AggregateData
+from app.core.aggregation import combine_meter_aggregates
 from app.core.scaling import raw_to_tesla_battery_percent
 from app.config import GatewayConfig
 
@@ -2447,6 +2448,25 @@ class GatewayManager:
             logger.warning(f"[{gateway_id}] call_tedapi({method}) error: {e}")
             return None
 
+    @staticmethod
+    def _combined_power(combined: Dict[str, Any], category: str) -> float:
+        readings = combined.get(category)
+        value = readings.get("instant_power") if isinstance(readings, dict) else None
+        return value if isinstance(value, (int, float)) and not isinstance(value, bool) else 0
+
+    def get_combined_aggregates(self) -> Dict[str, Any]:
+        """Meter aggregates for the whole system in Tesla /api/meters/aggregates format.
+
+        Merges every gateway's cached document (graceful degradation applied) with
+        :func:`app.core.aggregation.combine_meter_aggregates`. With one gateway this
+        is that gateway's document unchanged; ``{}`` when nothing is cached yet.
+        """
+        return combine_meter_aggregates(
+            status.data.aggregates
+            for status in self.get_all_gateways().values()
+            if status.data
+        )
+
     def get_aggregate_data(self) -> AggregateData:
         """Get aggregated data from all gateways.
 
@@ -2472,6 +2492,7 @@ class GatewayManager:
         # fetch failures would otherwise dilute the average toward zero.
         num_soe = 0
         num_soe_raw = 0
+        meter_documents: List[Dict[str, Any]] = []
 
         # Use get_all_gateways() so graceful degradation applies here the same
         # way it does for the legacy endpoints — otherwise a brief outage makes
@@ -2498,28 +2519,20 @@ class GatewayManager:
                 aggregate.total_battery_percent += data.soe
                 num_soe += 1
 
-            # Aggregate power flows (simple sum - works well for separate systems)
             if data.aggregates:
-                site = data.aggregates.get("site", {})
-                battery = data.aggregates.get("battery", {})
-                load = data.aggregates.get("load", {})
-                solar = data.aggregates.get("solar", {})
-
-                site_power = site.get("instant_power", 0)
-                battery_power = battery.get("instant_power", 0)
-                load_power = load.get("instant_power", 0)
-                solar_power = solar.get("instant_power", 0)
-
-                logger.debug(
-                    f"Gateway {gateway_id} power: site={site_power}, battery={battery_power}, load={load_power}, solar={solar_power}"
-                )
-
-                aggregate.total_site_power += site_power
-                aggregate.total_battery_power += battery_power
-                aggregate.total_load_power += load_power
-                aggregate.total_solar_power += solar_power
+                meter_documents.append(data.aggregates)
 
             aggregate.gateways[gateway_id] = status
+
+        # Power flows: merge every gateway's meter document the same way the
+        # legacy /aggregates endpoint does (see app.core.aggregation) and read
+        # the totals from the merged document. Summing per-gateway load readings
+        # under-counts a second inverter without its own site CT.
+        combined = combine_meter_aggregates(meter_documents)
+        aggregate.total_site_power = self._combined_power(combined, "site")
+        aggregate.total_battery_power = self._combined_power(combined, "battery")
+        aggregate.total_load_power = self._combined_power(combined, "load")
+        aggregate.total_solar_power = self._combined_power(combined, "solar")
 
         # Calculate average battery percentage (simple average for now)
         if num_soe_raw > 0:
