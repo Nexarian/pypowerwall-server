@@ -484,6 +484,7 @@ gateways:
 - `wifi_host`: WiFi host IP for TEDAPI v1r WiFi fallback (default `192.168.91.1`; set this when your gateway's WiFi AP is on a different subnet, e.g. behind a travel router)
 - `tedapi_auth_mode`: TEDAPI auth transport — `basic` (gateway Wi-Fi AP, default) or `bearer` (wired LAN on solar-only gateways; not PW2 or PW3). Defaults to `PW_TEDAPI_AUTH_MODE`.
 - `tedapi_api_version`: TEDAPI query set — `V2024_06` (default) or `V2026_06` (Tesla-signed queries; needs `protobuf >= 6.33.6`). Defaults to `PW_TEDAPI_API_VERSION`.
+- `tag`: Label for this gateway in multi-gateway legacy field names (`/strings`, `/freq`, `/alerts`), e.g. `"east"` → `A_east`, `east_PVAC_Fout`. Defaults to the `PW_GATEWAY_TAG` template (the gateway `name`). See [Legacy Proxy Compatibility](#legacy-proxy-compatibility).
   - Precedence: per-gateway value → `PW_TEDAPI_*` environment default → library default. Unknown values log a warning and fall back (they never abort startup). pypowerwall only honours these in full TEDAPI mode (`host` + `gw_pwd`, no `password`); Basic LAN, hybrid (`gw_pwd` + `password`) and cloud gateways ignore them. `/stats` reports the requested and active values per gateway, so a request pypowerwall did not honour is visible there.
 
 ### Reverse Proxy / HTTPS Proxy
@@ -670,7 +671,15 @@ For example `MQTT_CONTROLS=15` enables everything except going off grid, which n
 
 ### Legacy Proxy Compatibility
 
-All existing proxy endpoints work unchanged with a single gateway. With several gateways in `PW_GATEWAYS` they describe the whole system in one document, so Powerwall-Dashboard/Telegraf can keep polling the same URLs: `/aggregates` and `/api/meters/aggregates` merge every gateway's meter readings (home load is `site + solar + battery`, since a second inverter without its own site CT reports `load = 0`), `/strings` keys become `A_<tag>`, `/freq` prefixes `ISLAND_*`/`METER_*`/`PVAC_*` fields with `<tag>_` and continues `PW<n>` numbering, `/alerts` and `/alerts/pw` prefix alert codes with `<tag>_`, `/temps/pw` and `/pod` continue `PW<n>` numbering, and `/soe` averages the gateways that report a battery level. `<tag>` is the gateway `name` (non-alphanumerics replaced by `_`), or the last three characters of the gateway id when no distinct name is set.
+All existing proxy endpoints work unchanged with a single gateway. With several gateways in `PW_GATEWAYS` they describe the whole system in one document, so Powerwall-Dashboard/Telegraf can keep polling the same URLs: `/aggregates` and `/api/meters/aggregates` merge every gateway's meter readings (home load is `site + solar + battery`, since a second inverter without its own site CT reports `load = 0`), `/strings` keys become `A_<tag>`, `/freq` prefixes `ISLAND_*`/`METER_*`/`PVAC_*` fields with `<tag>_` and continues `PW<n>` numbering, `/alerts` and `/alerts/pw` prefix alert codes with `<tag>_`, `/temps/pw` and `/pod` continue `PW<n>` numbering, and `/soe` averages the gateways that report a battery level. How `<tag>` is built and where it goes in a key is configurable, since no two dashboards agree on a layout:
+
+```bash
+PW_GATEWAY_TAG="{name}"                 # per-gateway label: {name} {id} {suffix} {index}
+PW_GATEWAY_FIELD_FORMAT="{tag}_{field}" # /freq and alert fields -> "1JG_PVAC_Fout"
+PW_GATEWAY_STRING_FORMAT="{field}_{tag}" # /strings keys         -> "A_1JG"
+```
+
+`{suffix}` is the last three characters of the gateway id (the DIN suffix the old multi-instance proxy used), `{name}` falls back to `{suffix}` when the gateway has no distinct name, `{index}` is the gateway's 1-based position in `PW_GATEWAYS`. Tags are sanitized to `[A-Za-z0-9_-]`. A gateway entry can also set `"tag": "east"` to bypass the template. The field templates must contain `{field}`; otherwise the default is used and a warning logged. `/stats` reports the active templates.
 
 **Core Data Endpoints:**
 - `GET /vitals` - Detailed system vitals

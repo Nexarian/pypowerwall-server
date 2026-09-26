@@ -279,3 +279,63 @@ def test_gateway_tag_is_sanitized(client, two_inverters):
     a, _ = two_inverters
     a.gateway.name = "Garage Roof (east)"
     assert "A_Garage_Roof_east" in client.get("/strings").json()
+
+
+# --------------------------------------------------------------------------- #
+# Configurable naming (PW_GATEWAY_TAG / PW_GATEWAY_FIELD_FORMAT / PW_GATEWAY_STRING_FORMAT)
+# --------------------------------------------------------------------------- #
+
+def test_string_format_setting(client, two_inverters, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "gateway_string_format", "{tag}_{field}")
+    assert set(client.get("/strings").json()) == {"1JG_A", "KW7_A"}
+
+
+def test_field_format_setting(client, two_inverters, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "gateway_field_format", "{field}.{tag}")
+    freq = client.get("/freq").json()
+    assert freq["PVAC_Fout.1JG"] == 60.01
+    assert freq["ISLAND_FreqL1_Main.KW7"] == 60.0
+    assert freq["grid_status"] == 1
+    assert client.get("/alerts").json()[0] == "IslandChecksFailed.1JG"
+    assert "PVS_a060_MciClose.KW7" in client.get("/alerts/pw").json()
+
+
+def test_tag_format_setting(client, two_inverters, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "gateway_tag_format", "inv{index}")
+    assert set(client.get("/strings").json()) == {"A_inv1", "A_inv2"}
+    assert "inv2_PVAC_Fout" in client.get("/freq").json()
+
+
+def test_per_gateway_tag_overrides_template(client, two_inverters, monkeypatch):
+    from app.config import settings
+    a, _ = two_inverters
+    monkeypatch.setattr(settings, "gateway_tag_format", "{suffix}")
+    a.gateway.tag = "east"
+    data = client.get("/strings").json()
+    assert set(data) == {"A_east", "A_KW7"}
+
+
+def test_bad_field_format_falls_back_to_default(client, two_inverters, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "gateway_field_format", "{tag}")
+    assert "1JG_PVAC_Fout" in client.get("/freq").json()
+
+
+def test_settings_read_naming_env(monkeypatch):
+    from app.config import Settings
+    monkeypatch.setenv("PW_GATEWAY_TAG", "{suffix}")
+    monkeypatch.setenv("PW_GATEWAY_FIELD_FORMAT", "{field}__{tag}")
+    monkeypatch.setenv("PW_GATEWAY_STRING_FORMAT", "{tag}{field}")
+    s = Settings()
+    assert s.gateway_tag_format == "{suffix}"
+    assert s.gateway_field_format == "{field}__{tag}"
+    assert s.gateway_string_format == "{tag}{field}"
+
+
+def test_gateway_config_tag_reaches_gateway_model():
+    from app.config import GatewayConfig
+    cfg = GatewayConfig(id="x", host="10.0.0.1", tag="east")
+    assert cfg.tag == "east"

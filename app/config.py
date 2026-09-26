@@ -80,6 +80,14 @@ Environment Variables (Proxy Compatible):
         PW_WIFI_HOST         - WiFi host IP for TEDAPI v1r WiFi fallback (default: none)
         PROXY_BASE_URL       - Base URL for reverse proxy (default: "/")
 
+    Multi-Gateway Legacy Field Naming (see app.core.naming):
+        PW_GATEWAY_TAG            - Per-gateway label template: {name} {id} {suffix} {index}
+                                    (default: "{name}")
+        PW_GATEWAY_FIELD_FORMAT   - /freq and alert field template: {tag} {field}
+                                    (default: "{tag}_{field}" -> "1JG_PVAC_Fout")
+        PW_GATEWAY_STRING_FORMAT  - /strings key template: {tag} {field}
+                                    (default: "{field}_{tag}" -> "A_1JG")
+
     Time-Series Storage (Daily Energy Stats):
         PW_TIMESERIES_RETENTION       - Raw 5s sample retention, e.g. "24h" (default), "7d",
                                         "30d", "365d"; "0" = unlimited, "-1" = disable
@@ -267,6 +275,9 @@ class GatewayConfig(BaseModel):
     # here, so a bad value in one entry cannot abort config loading.
     tedapi_auth_mode: Optional[str] = None  # "basic" | "bearer"
     tedapi_api_version: Optional[str] = None  # "V2024_06" | "V2026_06"
+    # Explicit label for this gateway in multi-gateway legacy field names
+    # (overrides the PW_GATEWAY_TAG template; see app.core.naming).
+    tag: Optional[str] = None
 
     @model_validator(mode="after")
     def _default_name_to_id(self):
@@ -369,6 +380,20 @@ class Settings(BaseSettings):
     tedapi_auth_mode: str = Field(default="basic", alias="PW_TEDAPI_AUTH_MODE")
     tedapi_api_version: str = Field(
         default="V2024_06", alias="PW_TEDAPI_API_VERSION"
+    )
+
+    # Multi-gateway legacy field naming (see app.core.naming). With several
+    # gateways, /strings, /freq, /alerts and /alerts/pw label each gateway's
+    # keys; these templates decide how. Placeholders:
+    #   PW_GATEWAY_TAG:           {name} {id} {suffix} {index}
+    #   PW_GATEWAY_FIELD_FORMAT:  {tag} {field}   (freq/alert fields)
+    #   PW_GATEWAY_STRING_FORMAT: {tag} {field}   (/strings keys)
+    gateway_tag_format: str = Field(default="{name}", alias="PW_GATEWAY_TAG")
+    gateway_field_format: str = Field(
+        default="{tag}_{field}", alias="PW_GATEWAY_FIELD_FORMAT"
+    )
+    gateway_string_format: str = Field(
+        default="{field}_{tag}", alias="PW_GATEWAY_STRING_FORMAT"
     )
 
     # CORS configuration

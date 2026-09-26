@@ -535,6 +535,7 @@ class GatewayManager:
                     type=config.type,
                     tedapi_auth_mode=tedapi_auth_mode,
                     tedapi_api_version=tedapi_api_version,
+                    tag=config.tag,
                 )
 
                 # Store gateway - connection will be created lazily on first poll

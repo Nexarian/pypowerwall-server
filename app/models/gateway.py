@@ -69,6 +69,7 @@ class Gateway(BaseModel):
     # to valid pypowerwall enum values (stored as plain strings).
     tedapi_auth_mode: str = "basic"  # "basic" | "bearer"
     tedapi_api_version: str = "V2024_06"  # "V2024_06" | "V2026_06"
+    tag: Optional[str] = None  # Explicit multi-gateway field label (see app.core.naming)
     online: bool = False
     last_error: Optional[str] = None
 

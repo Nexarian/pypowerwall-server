@@ -73,6 +73,7 @@ from app.core.gateway_manager import (
     gateway_manager,
 )
 from app.config import settings, SERVER_VERSION
+from app.core import naming
 from app.utils.stats_tracker import stats_tracker
 
 logger = logging.getLogger(__name__)
@@ -563,17 +564,16 @@ def get_default_gateway():
 # per gateway feeding the same InfluxDB measurement):
 #   /aggregates, /api/meters/aggregates  -> merged meter document (app.core.aggregation)
 #   /soe                                  -> average over gateways reporting a battery level
-#   /strings                              -> "A_<tag>", "B_<tag>", ... per gateway
-#   /freq                                 -> "<tag>_ISLAND_*", "<tag>_METER_*", "<tag>_PVAC_*",
-#                                            PW<n> numbering continues across gateways,
-#                                            grid_status = worst gateway
-#   /alerts, /alerts/pw                   -> "<tag>_<alert>"
+#   /strings                              -> one key per gateway string (default "A_<tag>")
+#   /freq                                 -> ISLAND/METER/PVAC fields per gateway
+#                                            (default "<tag>_PVAC_Fout"), PW<n> numbering
+#                                            continues across gateways, grid_status = worst
+#   /alerts, /alerts/pw                   -> one entry per gateway alert (default "<tag>_<alert>")
 #   /temps/pw, /pod                       -> PW<n> numbering continues across gateways
-# <tag> is the gateway name from PW_GATEWAYS (sanitized for use in a field
-# name); without a distinct name the last three characters of the gateway id
-# are used, like the old proxy's DIN suffix.
+# How <tag> is built and where it goes in a key is configurable with
+# PW_GATEWAY_TAG, PW_GATEWAY_FIELD_FORMAT and PW_GATEWAY_STRING_FORMAT, plus an
+# optional per-gateway "tag" in PW_GATEWAYS (see app.core.naming).
 # ---------------------------------------------------------------------------
-_TAG_CLEAN = re.compile(r"[^A-Za-z0-9]+")
 
 
 def is_multi_gateway() -> bool:
@@ -582,13 +582,22 @@ def is_multi_gateway() -> bool:
 
 
 def gateway_tag(status) -> str:
-    """Short label used to prefix/suffix per-gateway fields in multi-gateway mode."""
-    gw = status.gateway
-    if gw.name and gw.name != gw.id:
-        tag = _TAG_CLEAN.sub("_", gw.name).strip("_")
-        if tag:
-            return tag
-    return gw.id[-3:]
+    """Per-gateway label used in multi-gateway field names (PW_GATEWAY_TAG)."""
+    ids = list(gateway_manager.gateways.keys())
+    index = ids.index(status.gateway.id) + 1 if status.gateway.id in ids else 1
+    return naming.gateway_tag(status.gateway, index, settings.gateway_tag_format)
+
+
+def _field_format() -> str:
+    return naming.validate_field_format(
+        settings.gateway_field_format, naming.DEFAULT_FIELD_FORMAT, "PW_GATEWAY_FIELD_FORMAT"
+    )
+
+
+def _string_format() -> str:
+    return naming.validate_field_format(
+        settings.gateway_string_format, naming.DEFAULT_STRING_FORMAT, "PW_GATEWAY_STRING_FORMAT"
+    )
 
 
 def _legacy_statuses() -> list:
@@ -611,7 +620,8 @@ def _legacy_statuses() -> list:
 
 
 def _prefixed(key: str, tag: Optional[str]) -> str:
-    return f"{tag}_{key}" if tag else key
+    """Apply PW_GATEWAY_FIELD_FORMAT when a gateway tag is in play."""
+    return naming.field_name(key, tag, _field_format()) if tag else key
 
 
 # Login cookie max-age: 10 years for long-running kiosk dashboards
@@ -678,15 +688,17 @@ async def get_strings():
     Uses graceful degradation: returns cached data even if gateway is temporarily offline.
     Returns empty object if no data available yet.
 
-    Multi-gateway: every gateway's strings are returned, keyed "<string>_<tag>"
-    (e.g. "A_1JG", "A_KW7") so two gateways' string "A" do not collide.
+    Multi-gateway: every gateway's strings are returned, keyed per
+    PW_GATEWAY_STRING_FORMAT (default "A_<tag>", e.g. "A_1JG", "A_KW7") so two
+    gateways' string "A" do not collide.
     """
     if is_multi_gateway():
         merged: Dict[str, Any] = {}
+        string_format = _string_format()
         for status in _legacy_statuses():
             tag = gateway_tag(status)
             for name, values in (status.data.strings or {}).items():
-                merged[f"{name}_{tag}"] = values
+                merged[naming.field_name(name, tag, string_format)] = values
         return merged
 
     gateway_id = get_default_gateway()
@@ -755,8 +767,8 @@ def _grid_status_numeric(status) -> int:
 def _freq_fields(status, pw_start: int = 1, tag: Optional[str] = None) -> Tuple[Dict[str, Any], int]:
     """Build the /freq fields for one gateway.
 
-    Powerwall entries are numbered from ``pw_start``; ISLAND/METER/PVAC fields are
-    prefixed with ``tag`` when given (multi-gateway mode). Returns the fields and
+    Powerwall entries are numbered from ``pw_start``; ISLAND/METER/PVAC fields
+    carry ``tag`` (per PW_GATEWAY_FIELD_FORMAT) when given (multi-gateway mode). Returns the fields and
     the number of Powerwalls found, so the caller can continue the numbering.
     """
     fcv: Dict[str, Any] = {}
@@ -866,8 +878,9 @@ async def get_freq():
     Uses graceful degradation: returns cached data even if gateway is temporarily offline.
 
     Multi-gateway: PW<n> numbering continues across gateways, ISLAND/METER/PVAC
-    fields are prefixed with the gateway tag ("1JG_PVAC_Fout"), and grid_status
-    is the worst of all gateways (0 if any gateway is off grid).
+    fields carry the gateway tag per PW_GATEWAY_FIELD_FORMAT (default
+    "1JG_PVAC_Fout"), and grid_status is the worst of all gateways (0 if any
+    gateway is off grid).
     """
     if is_multi_gateway():
         fcv: Dict[str, Any] = {}
@@ -1010,13 +1023,14 @@ async def get_alerts():
 
     Uses graceful degradation: returns cached alerts even if gateway is temporarily offline.
 
-    Multi-gateway: alerts of all gateways, each prefixed with its gateway tag.
+    Multi-gateway: alerts of all gateways, each labelled with its gateway tag
+    per PW_GATEWAY_FIELD_FORMAT (default "<tag>_<alert>").
     """
     if is_multi_gateway():
         alerts: List[str] = []
         for status in _legacy_statuses():
             tag = gateway_tag(status)
-            alerts.extend(f"{tag}_{alert}" for alert in (status.data.alerts or []))
+            alerts.extend(_prefixed(alert, tag) for alert in (status.data.alerts or []))
         return alerts
 
     gateway_id = get_default_gateway()
@@ -1032,7 +1046,8 @@ async def get_alerts_pw():
 
     Uses graceful degradation: returns cached alerts even if gateway is temporarily offline.
 
-    Multi-gateway: alerts of all gateways, each prefixed with its gateway tag.
+    Multi-gateway: alerts of all gateways, each labelled with its gateway tag
+    per PW_GATEWAY_FIELD_FORMAT (default "<tag>_<alert>").
     """
     pwalerts: Dict[str, int] = {}
     multi = is_multi_gateway()
@@ -2614,6 +2629,9 @@ async def get_stats():
         "PW_CONTROL_SECRET": "**********" if settings.control_secret else None,
         "PW_GW_PWD": "**********" if settings.pw_gw_pwd else None,
         "PW_NEG_SOLAR": settings.neg_solar,
+        "PW_GATEWAY_TAG": settings.gateway_tag_format,
+        "PW_GATEWAY_FIELD_FORMAT": settings.gateway_field_format,
+        "PW_GATEWAY_STRING_FORMAT": settings.gateway_string_format,
         "PW_SUPPRESS_NETWORK_ERRORS": settings.suppress_network_errors,
         "PW_NETWORK_ERROR_RATE_LIMIT": settings.network_error_rate_limit,
         "PW_FAIL_FAST": settings.fail_fast,
