@@ -181,11 +181,11 @@ def test_api_aggregate_totals_use_merged_load(client, two_inverters):
     assert power["load"] == 5000.0
 
 
-def test_strings_are_suffixed_per_gateway(client, two_inverters):
+def test_solar_strings_are_tagged_per_gateway(client, two_inverters):
     data = client.get("/strings").json()
-    assert set(data) == {"A_1JG", "A_KW7"}
-    assert data["A_1JG"]["Power"] == 600.0
-    assert data["A_KW7"]["Power"] == 900.0
+    assert set(data) == {"1JG_A", "KW7_A"}
+    assert data["1JG_A"]["Power"] == 600.0
+    assert data["KW7_A"]["Power"] == 900.0
 
 
 def test_freq_is_prefixed_per_gateway(client, two_inverters):
@@ -272,28 +272,32 @@ def test_gateway_tag_falls_back_to_id_suffix(client, two_inverters):
     a, _ = two_inverters
     a.gateway.name = a.gateway.id  # no distinct name configured
     data = client.get("/strings").json()
-    assert "A_1JG" in data  # last three characters of the id
+    assert "1JG_A" in data  # last three characters of the id
 
 
 def test_gateway_tag_is_sanitized(client, two_inverters):
     a, _ = two_inverters
     a.gateway.name = "Garage Roof (east)"
-    assert "A_Garage_Roof_east" in client.get("/strings").json()
+    assert "Garage_Roof_east_A" in client.get("/strings").json()
 
 
 # --------------------------------------------------------------------------- #
-# Configurable naming (PW_GATEWAY_TAG / PW_GATEWAY_FIELD_FORMAT / PW_GATEWAY_STRING_FORMAT)
+# Configurable naming (PW_GATEWAY_TAG, PW_GATEWAY_FIELD_FORMAT, per-category overrides)
 # --------------------------------------------------------------------------- #
 
-def test_string_format_setting(client, two_inverters, monkeypatch):
+def test_solar_string_format_override(client, two_inverters, monkeypatch):
+    """Powerwall-Dashboard's layout: strings suffixed, everything else prefixed."""
     from app.config import settings
-    monkeypatch.setattr(settings, "gateway_string_format", "{tag}_{field}")
-    assert set(client.get("/strings").json()) == {"1JG_A", "KW7_A"}
+    monkeypatch.setattr(settings, "gateway_solar_string_format", "{field}_{tag}")
+    assert set(client.get("/strings").json()) == {"A_1JG", "A_KW7"}
+    assert "1JG_PVAC_Fout" in client.get("/freq").json()
+    assert "1JG_IslandChecksFailed" in client.get("/alerts/pw").json()
 
 
-def test_field_format_setting(client, two_inverters, monkeypatch):
+def test_default_field_format_applies_to_every_category(client, two_inverters, monkeypatch):
     from app.config import settings
     monkeypatch.setattr(settings, "gateway_field_format", "{field}.{tag}")
+    assert "A.1JG" in client.get("/strings").json()
     freq = client.get("/freq").json()
     assert freq["PVAC_Fout.1JG"] == 60.01
     assert freq["ISLAND_FreqL1_Main.KW7"] == 60.0
@@ -302,11 +306,22 @@ def test_field_format_setting(client, two_inverters, monkeypatch):
     assert "PVS_a060_MciClose.KW7" in client.get("/alerts/pw").json()
 
 
+def test_alert_and_freq_overrides(client, two_inverters, monkeypatch):
+    from app.config import settings
+    monkeypatch.setattr(settings, "gateway_alert_format", "{tag}:{field}")
+    monkeypatch.setattr(settings, "gateway_freq_format", "{field}@{TAG}")
+    assert "KW7:IslandChecksFailed" in client.get("/alerts/pw").json()
+    assert "PVAC_Fout@KW7" in client.get("/freq").json()
+    assert "KW7_A" in client.get("/strings").json()  # untouched category keeps the default
+
+
 def test_tag_format_setting(client, two_inverters, monkeypatch):
     from app.config import settings
-    monkeypatch.setattr(settings, "gateway_tag_format", "inv{index}")
-    assert set(client.get("/strings").json()) == {"A_inv1", "A_inv2"}
-    assert "inv2_PVAC_Fout" in client.get("/freq").json()
+    monkeypatch.setattr(settings, "gateway_tag_format", "inv{index:02d}")
+    assert set(client.get("/strings").json()) == {"inv01_A", "inv02_A"}
+    assert "inv02_PVAC_Fout" in client.get("/freq").json()
+    monkeypatch.setattr(settings, "gateway_tag_format", "{DIN:-3}")
+    assert set(client.get("/strings").json()) == {"1JG_A", "KW7_A"}
 
 
 def test_per_gateway_tag_overrides_template(client, two_inverters, monkeypatch):
@@ -314,25 +329,47 @@ def test_per_gateway_tag_overrides_template(client, two_inverters, monkeypatch):
     a, _ = two_inverters
     monkeypatch.setattr(settings, "gateway_tag_format", "{suffix}")
     a.gateway.tag = "east"
-    data = client.get("/strings").json()
-    assert set(data) == {"A_east", "A_KW7"}
+    assert set(client.get("/strings").json()) == {"east_A", "KW7_A"}
 
 
 def test_bad_field_format_falls_back_to_default(client, two_inverters, monkeypatch):
     from app.config import settings
-    monkeypatch.setattr(settings, "gateway_field_format", "{tag}")
+    monkeypatch.setattr(settings, "gateway_freq_format", "{tag}")
+    monkeypatch.setattr(settings, "gateway_field_format", "{field}{")
     assert "1JG_PVAC_Fout" in client.get("/freq").json()
+
+
+def test_stats_reports_naming_settings(client, two_inverters):
+    config = client.get("/stats").json()["config"]
+    assert config["PW_GATEWAY_TAG"] == "{name}"
+    assert config["PW_GATEWAY_FIELD_FORMAT"] == "{tag}_{field}"
+    for key in ("PW_GATEWAY_SOLAR_STRING_FORMAT", "PW_GATEWAY_ALERT_FORMAT", "PW_GATEWAY_FREQ_FORMAT"):
+        assert key in config
 
 
 def test_settings_read_naming_env(monkeypatch):
     from app.config import Settings
-    monkeypatch.setenv("PW_GATEWAY_TAG", "{suffix}")
+    monkeypatch.setenv("PW_GATEWAY_TAG", "{din:-3}")
     monkeypatch.setenv("PW_GATEWAY_FIELD_FORMAT", "{field}__{tag}")
-    monkeypatch.setenv("PW_GATEWAY_STRING_FORMAT", "{tag}{field}")
+    monkeypatch.setenv("PW_GATEWAY_SOLAR_STRING_FORMAT", "{tag}{field}")
+    monkeypatch.setenv("PW_GATEWAY_ALERT_FORMAT", "{tag}:{field}")
+    monkeypatch.setenv("PW_GATEWAY_FREQ_FORMAT", "{field}@{tag}")
     s = Settings()
-    assert s.gateway_tag_format == "{suffix}"
+    assert s.gateway_tag_format == "{din:-3}"
     assert s.gateway_field_format == "{field}__{tag}"
-    assert s.gateway_string_format == "{tag}{field}"
+    assert s.gateway_solar_string_format == "{tag}{field}"
+    assert s.gateway_alert_format == "{tag}:{field}"
+    assert s.gateway_freq_format == "{field}@{tag}"
+
+
+def test_settings_naming_defaults():
+    from app.config import Settings
+    s = Settings()
+    assert s.gateway_tag_format == "{name}"
+    assert s.gateway_field_format == "{tag}_{field}"
+    assert s.gateway_solar_string_format is None
+    assert s.gateway_alert_format is None
+    assert s.gateway_freq_format is None
 
 
 def test_gateway_config_tag_reaches_gateway_model():

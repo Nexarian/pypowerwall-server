@@ -80,13 +80,13 @@ Environment Variables (Proxy Compatible):
         PW_WIFI_HOST         - WiFi host IP for TEDAPI v1r WiFi fallback (default: none)
         PROXY_BASE_URL       - Base URL for reverse proxy (default: "/")
 
-    Multi-Gateway Legacy Field Naming (see app.core.naming):
-        PW_GATEWAY_TAG            - Per-gateway label template: {name} {id} {suffix} {index}
-                                    (default: "{name}")
-        PW_GATEWAY_FIELD_FORMAT   - /freq and alert field template: {tag} {field}
-                                    (default: "{tag}_{field}" -> "1JG_PVAC_Fout")
-        PW_GATEWAY_STRING_FORMAT  - /strings key template: {tag} {field}
-                                    (default: "{field}_{tag}" -> "A_1JG")
+    Multi-Gateway Legacy Field Naming (Python format strings, see app.core.naming):
+        PW_GATEWAY_TAG                 - Per-gateway label: {name} {id} {din} {suffix} {index} {host}
+                                         (default: "{name}"; {din:-3} = DIN suffix)
+        PW_GATEWAY_FIELD_FORMAT        - Default key layout, {tag} {field} (default: "{tag}_{field}")
+        PW_GATEWAY_SOLAR_STRING_FORMAT - /strings keys, overrides the default (e.g. "{field}_{tag}")
+        PW_GATEWAY_ALERT_FORMAT        - /alerts and /alerts/pw keys, overrides the default
+        PW_GATEWAY_FREQ_FORMAT         - /freq ISLAND/METER/PVAC keys, overrides the default
 
     Time-Series Storage (Daily Energy Stats):
         PW_TIMESERIES_RETENTION       - Raw 5s sample retention, e.g. "24h" (default), "7d",
@@ -384,16 +384,24 @@ class Settings(BaseSettings):
 
     # Multi-gateway legacy field naming (see app.core.naming). With several
     # gateways, /strings, /freq, /alerts and /alerts/pw label each gateway's
-    # keys; these templates decide how. Placeholders:
-    #   PW_GATEWAY_TAG:           {name} {id} {suffix} {index}
-    #   PW_GATEWAY_FIELD_FORMAT:  {tag} {field}   (freq/alert fields)
-    #   PW_GATEWAY_STRING_FORMAT: {tag} {field}   (/strings keys)
+    # keys; these Python format strings decide how.
+    #   PW_GATEWAY_TAG:          {name} {id} {din} {suffix} {index} {host}
+    #                            (string specs slice: {din:-3} = last 3 chars)
+    #   PW_GATEWAY_FIELD_FORMAT: {tag} {field} - default for every category
+    #   PW_GATEWAY_<CATEGORY>_FORMAT overrides it per category:
+    #     SOLAR_STRING (/strings), ALERT (/alerts, /alerts/pw), FREQ (/freq)
     gateway_tag_format: str = Field(default="{name}", alias="PW_GATEWAY_TAG")
     gateway_field_format: str = Field(
         default="{tag}_{field}", alias="PW_GATEWAY_FIELD_FORMAT"
     )
-    gateway_string_format: str = Field(
-        default="{field}_{tag}", alias="PW_GATEWAY_STRING_FORMAT"
+    gateway_solar_string_format: Optional[str] = Field(
+        default=None, alias="PW_GATEWAY_SOLAR_STRING_FORMAT"
+    )
+    gateway_alert_format: Optional[str] = Field(
+        default=None, alias="PW_GATEWAY_ALERT_FORMAT"
+    )
+    gateway_freq_format: Optional[str] = Field(
+        default=None, alias="PW_GATEWAY_FREQ_FORMAT"
     )
 
     # CORS configuration

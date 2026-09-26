@@ -564,15 +564,16 @@ def get_default_gateway():
 # per gateway feeding the same InfluxDB measurement):
 #   /aggregates, /api/meters/aggregates  -> merged meter document (app.core.aggregation)
 #   /soe                                  -> average over gateways reporting a battery level
-#   /strings                              -> one key per gateway string (default "A_<tag>")
+#   /strings                              -> one key per gateway solar string ("<tag>_A")
 #   /freq                                 -> ISLAND/METER/PVAC fields per gateway
-#                                            (default "<tag>_PVAC_Fout"), PW<n> numbering
+#                                            ("<tag>_PVAC_Fout"), PW<n> numbering
 #                                            continues across gateways, grid_status = worst
-#   /alerts, /alerts/pw                   -> one entry per gateway alert (default "<tag>_<alert>")
+#   /alerts, /alerts/pw                   -> one entry per gateway alert ("<tag>_<alert>")
 #   /temps/pw, /pod                       -> PW<n> numbering continues across gateways
-# How <tag> is built and where it goes in a key is configurable with
-# PW_GATEWAY_TAG, PW_GATEWAY_FIELD_FORMAT and PW_GATEWAY_STRING_FORMAT, plus an
-# optional per-gateway "tag" in PW_GATEWAYS (see app.core.naming).
+# How <tag> is built (PW_GATEWAY_TAG, per-gateway "tag") and where it goes in a
+# key (PW_GATEWAY_FIELD_FORMAT, overridden per category by
+# PW_GATEWAY_SOLAR_STRING_FORMAT / _ALERT_FORMAT / _FREQ_FORMAT) is
+# configurable with Python format strings; see app.core.naming.
 # ---------------------------------------------------------------------------
 
 
@@ -588,16 +589,9 @@ def gateway_tag(status) -> str:
     return naming.gateway_tag(status.gateway, index, settings.gateway_tag_format)
 
 
-def _field_format() -> str:
-    return naming.validate_field_format(
-        settings.gateway_field_format, naming.DEFAULT_FIELD_FORMAT, "PW_GATEWAY_FIELD_FORMAT"
-    )
-
-
-def _string_format() -> str:
-    return naming.validate_field_format(
-        settings.gateway_string_format, naming.DEFAULT_STRING_FORMAT, "PW_GATEWAY_STRING_FORMAT"
-    )
+def _format(category: str) -> str:
+    """Key layout for a tagged category (PW_GATEWAY_<CATEGORY>_FORMAT, else PW_GATEWAY_FIELD_FORMAT)."""
+    return naming.category_format(settings, category)
 
 
 def _legacy_statuses() -> list:
@@ -619,9 +613,9 @@ def _legacy_statuses() -> list:
     return statuses
 
 
-def _prefixed(key: str, tag: Optional[str]) -> str:
-    """Apply PW_GATEWAY_FIELD_FORMAT when a gateway tag is in play."""
-    return naming.field_name(key, tag, _field_format()) if tag else key
+def _tagged(key: str, tag: Optional[str], category: str) -> str:
+    """Apply the category's key layout when a gateway tag is in play."""
+    return naming.field_name(key, tag, _format(category)) if tag else key
 
 
 # Login cookie max-age: 10 years for long-running kiosk dashboards
@@ -688,17 +682,17 @@ async def get_strings():
     Uses graceful degradation: returns cached data even if gateway is temporarily offline.
     Returns empty object if no data available yet.
 
-    Multi-gateway: every gateway's strings are returned, keyed per
-    PW_GATEWAY_STRING_FORMAT (default "A_<tag>", e.g. "A_1JG", "A_KW7") so two
-    gateways' string "A" do not collide.
+    Multi-gateway: every gateway's solar strings are returned, keyed per
+    PW_GATEWAY_SOLAR_STRING_FORMAT (default "<tag>_A", e.g. "1JG_A", "KW7_A";
+    Powerwall-Dashboard sets "{field}_{tag}" for "A_1JG") so two gateways'
+    string "A" do not collide.
     """
     if is_multi_gateway():
         merged: Dict[str, Any] = {}
-        string_format = _string_format()
         for status in _legacy_statuses():
             tag = gateway_tag(status)
             for name, values in (status.data.strings or {}).items():
-                merged[naming.field_name(name, tag, string_format)] = values
+                merged[_tagged(name, tag, "solar_string")] = values
         return merged
 
     gateway_id = get_default_gateway()
@@ -768,7 +762,7 @@ def _freq_fields(status, pw_start: int = 1, tag: Optional[str] = None) -> Tuple[
     """Build the /freq fields for one gateway.
 
     Powerwall entries are numbered from ``pw_start``; ISLAND/METER/PVAC fields
-    carry ``tag`` (per PW_GATEWAY_FIELD_FORMAT) when given (multi-gateway mode). Returns the fields and
+    carry ``tag`` (per PW_GATEWAY_FREQ_FORMAT) when given (multi-gateway mode). Returns the fields and
     the number of Powerwalls found, so the caller can continue the numbering.
     """
     fcv: Dict[str, Any] = {}
@@ -849,15 +843,15 @@ def _freq_fields(status, pw_start: int = 1, tag: Optional[str] = None) -> Tuple[
         if device.startswith("TESYNC") or device.startswith("TEMSA"):
             for i, value in d.items():
                 if i.startswith("ISLAND") or i.startswith("METER"):
-                    fcv[_prefixed(i, tag)] = value
+                    fcv[_tagged(i, tag, "freq")] = value
         elif device.startswith("PVAC"):
             for i, value in d.items():
                 if i.startswith(("PVAC_Fout", "PVAC_VL", "PVAC_Fan_Speed")):
-                    fcv[_prefixed(i, tag)] = value
+                    fcv[_tagged(i, tag, "freq")] = value
 
     # Fallback: if we have freq data but no device-specific data, include it
     if status.data.freq is not None and not any(k.startswith("PW") for k in fcv.keys()):
-        fcv[_prefixed("freq", tag)] = status.data.freq
+        fcv[_tagged("freq", tag, "freq")] = status.data.freq
 
     return fcv, len(pw_serials)
 
@@ -878,7 +872,7 @@ async def get_freq():
     Uses graceful degradation: returns cached data even if gateway is temporarily offline.
 
     Multi-gateway: PW<n> numbering continues across gateways, ISLAND/METER/PVAC
-    fields carry the gateway tag per PW_GATEWAY_FIELD_FORMAT (default
+    fields carry the gateway tag per PW_GATEWAY_FREQ_FORMAT (default
     "1JG_PVAC_Fout"), and grid_status is the worst of all gateways (0 if any
     gateway is off grid).
     """
@@ -1024,13 +1018,13 @@ async def get_alerts():
     Uses graceful degradation: returns cached alerts even if gateway is temporarily offline.
 
     Multi-gateway: alerts of all gateways, each labelled with its gateway tag
-    per PW_GATEWAY_FIELD_FORMAT (default "<tag>_<alert>").
+    per PW_GATEWAY_ALERT_FORMAT (default "<tag>_<alert>").
     """
     if is_multi_gateway():
         alerts: List[str] = []
         for status in _legacy_statuses():
             tag = gateway_tag(status)
-            alerts.extend(_prefixed(alert, tag) for alert in (status.data.alerts or []))
+            alerts.extend(_tagged(alert, tag, "alert") for alert in (status.data.alerts or []))
         return alerts
 
     gateway_id = get_default_gateway()
@@ -1047,14 +1041,14 @@ async def get_alerts_pw():
     Uses graceful degradation: returns cached alerts even if gateway is temporarily offline.
 
     Multi-gateway: alerts of all gateways, each labelled with its gateway tag
-    per PW_GATEWAY_FIELD_FORMAT (default "<tag>_<alert>").
+    per PW_GATEWAY_ALERT_FORMAT (default "<tag>_<alert>").
     """
     pwalerts: Dict[str, int] = {}
     multi = is_multi_gateway()
     for status in _legacy_statuses():
         tag = gateway_tag(status) if multi else None
         for alert in (status.data.alerts or []):
-            pwalerts[_prefixed(alert, tag)] = 1
+            pwalerts[_tagged(alert, tag, "alert")] = 1
     return pwalerts
 @router.get("/fans")
 async def get_fans():
@@ -2631,7 +2625,9 @@ async def get_stats():
         "PW_NEG_SOLAR": settings.neg_solar,
         "PW_GATEWAY_TAG": settings.gateway_tag_format,
         "PW_GATEWAY_FIELD_FORMAT": settings.gateway_field_format,
-        "PW_GATEWAY_STRING_FORMAT": settings.gateway_string_format,
+        "PW_GATEWAY_SOLAR_STRING_FORMAT": settings.gateway_solar_string_format,
+        "PW_GATEWAY_ALERT_FORMAT": settings.gateway_alert_format,
+        "PW_GATEWAY_FREQ_FORMAT": settings.gateway_freq_format,
         "PW_SUPPRESS_NETWORK_ERRORS": settings.suppress_network_errors,
         "PW_NETWORK_ERROR_RATE_LIMIT": settings.network_error_rate_limit,
         "PW_FAIL_FAST": settings.fail_fast,
