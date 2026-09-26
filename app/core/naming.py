@@ -19,19 +19,22 @@ Tag (the per-gateway label):
     Placeholder names are case-insensitive ({DIN:-3} works).
     A gateway can set "tag" in PW_GATEWAYS to bypass the template.
 
-Field formats (where the tag goes in a key), placeholders {tag} {field}:
-    PW_GATEWAY_FIELD_FORMAT          default "{tag}_{field}"; used by every
+Key formats (where the tag goes in a key). Placeholders: {tag} is the
+per-gateway label above; {key} is the key being tagged, i.e. the solar string
+letter ("A"), the alert code ("IslandChecksFailed") or the /freq name
+("PVAC_Fout"):
+    PW_GATEWAY_DEFAULT_FORMAT        default "{tag}_{key}"; used by every
                                      category that has no format of its own
     PW_GATEWAY_SOLAR_STRING_FORMAT   /strings keys       ("A" -> "1JG_A")
     PW_GATEWAY_ALERT_FORMAT          /alerts, /alerts/pw ("1JG_IslandChecksFailed")
     PW_GATEWAY_FREQ_FORMAT           /freq ISLAND/METER/PVAC fields ("1JG_PVAC_Fout")
 
 Rendered tags are sanitized to [A-Za-z0-9_-] (anything else becomes "_") so
-they are safe as InfluxDB field keys and in Grafana queries. A field template
-that does not contain {field}, or that fails to format, would produce
+they are safe as InfluxDB field keys and in Grafana queries. A key template
+that does not contain {key}, or that fails to format, would produce
 colliding or broken keys, so it is rejected (logged once) and the fallback
-is used instead: the category's default, then PW_GATEWAY_FIELD_FORMAT, then
-the built-in "{tag}_{field}".
+is used instead: the category's default, then PW_GATEWAY_DEFAULT_FORMAT, then
+the built-in "{tag}_{key}".
 """
 import logging
 import re
@@ -41,7 +44,7 @@ from typing import Any, Dict, Optional
 logger = logging.getLogger(__name__)
 
 DEFAULT_TAG_FORMAT = "{name}"
-DEFAULT_FIELD_FORMAT = "{tag}_{field}"
+DEFAULT_FORMAT = "{tag}_{key}"
 
 # Categories of tagged fields, in the order a user would meet them. The
 # settings attribute is "gateway_<category>_format" (env PW_GATEWAY_<CATEGORY>_FORMAT).
@@ -132,11 +135,11 @@ def gateway_tag(gateway, index: int, tag_format: Optional[str] = None) -> str:
 def _usable(template: Optional[str], setting: str) -> bool:
     if not template:
         return False
-    if "{field}" not in template.replace("{FIELD}", "{field}"):
-        _warn_once(setting + ":" + template, "%s=%r has no {field} placeholder; ignoring it", setting, template)
+    if "{key}" not in template.replace("{KEY}", "{key}"):
+        _warn_once(setting + ":" + template, "%s=%r has no {key} placeholder; ignoring it", setting, template)
         return False
     try:
-        render(template, {"tag": "t", "field": "f"})
+        render(template, {"tag": "t", "key": "f"})
     except (KeyError, ValueError, IndexError, TypeError) as exc:
         _warn_once(setting + ":" + template, "%s=%r is not a valid format string (%s); ignoring it", setting, template, exc)
         return False
@@ -150,11 +153,12 @@ def category_format(settings, category: str) -> str:
     own = getattr(settings, f"gateway_{category}_format", None)
     if _usable(own, f"PW_GATEWAY_{category.upper()}_FORMAT"):
         return own
-    default = getattr(settings, "gateway_field_format", None)
-    if _usable(default, "PW_GATEWAY_FIELD_FORMAT"):
+    default = getattr(settings, "gateway_default_format", None)
+    if _usable(default, "PW_GATEWAY_DEFAULT_FORMAT"):
         return default
-    return DEFAULT_FIELD_FORMAT
+    return DEFAULT_FORMAT
 
 
-def field_name(field: str, tag: str, field_format: str = DEFAULT_FIELD_FORMAT) -> str:
-    return render(field_format, {"tag": tag, "field": field})
+def key_name(key: str, tag: str, key_format: str = DEFAULT_FORMAT) -> str:
+    """Tag ``key`` (a solar string letter, alert code or /freq name) with ``tag``."""
+    return render(key_format, {"tag": tag, "key": key})

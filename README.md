@@ -671,17 +671,21 @@ For example `MQTT_CONTROLS=15` enables everything except going off grid, which n
 
 ### Legacy Proxy Compatibility
 
-All existing proxy endpoints work unchanged with a single gateway. With several gateways in `PW_GATEWAYS` they describe the whole system in one document, so Powerwall-Dashboard/Telegraf can keep polling the same URLs: `/aggregates` and `/api/meters/aggregates` merge every gateway's meter readings (home load is `site + solar + battery`, since a second inverter without its own site CT reports `load = 0`), `/strings` keys become `<tag>_A`, `/freq` prefixes `ISLAND_*`/`METER_*`/`PVAC_*` fields with `<tag>_` and continues `PW<n>` numbering, `/alerts` and `/alerts/pw` prefix alert codes with `<tag>_`, `/temps/pw` and `/pod` continue `PW<n>` numbering, and `/soe` averages the gateways that report a battery level. How `<tag>` is built and where it goes in a key is configurable with Python format strings, since no two dashboards agree on a layout:
+All existing proxy endpoints work unchanged with a single gateway. With several gateways in `PW_GATEWAYS` they describe the whole system in one document, so Powerwall-Dashboard/Telegraf can keep polling the same URLs: `/aggregates` and `/api/meters/aggregates` merge every gateway's meter readings (home load is `site + solar + battery`, since a second inverter without its own site CT reports `load = 0`), `/strings` keys become `<tag>_A`, `/freq` prefixes `ISLAND_*`/`METER_*`/`PVAC_*` fields with `<tag>_` and continues `PW<n>` numbering, `/alerts` and `/alerts/pw` prefix alert codes with `<tag>_`, `/temps/pw` and `/pod` continue `PW<n>` numbering, and `/soe` averages the gateways that report a battery level. How `<tag>` is built and where it goes in a key is configurable with Python format strings, since no two dashboards agree on a layout. Terms used by the settings below:
+
+- **key** — the name of one value inside a merged endpoint before any gateway label is added: the solar string letter (`A`) in `/strings`, the alert code (`IslandChecksFailed`) in `/alerts` and `/alerts/pw`, or the vitals name (`PVAC_Fout`, `ISLAND_FreqL1_Main`) in `/freq`.
+- **tag** — the per-gateway label that makes a key unique across gateways (`1JG`, `KW7`), built from `PW_GATEWAY_TAG` or a gateway's own `tag`.
+- **format** — a template that combines `{tag}` and `{key}` into the final name. `PW_GATEWAY_DEFAULT_FORMAT` is the format every category uses unless that category's own `PW_GATEWAY_<CATEGORY>_FORMAT` is set. The categories are `SOLAR_STRING`, `ALERT` and `FREQ`.
 
 ```bash
 PW_GATEWAY_TAG="{name}"                    # per-gateway label: {name} {id} {din} {suffix} {index} {host}
-PW_GATEWAY_FIELD_FORMAT="{tag}_{field}"    # default key layout for every category below
-PW_GATEWAY_SOLAR_STRING_FORMAT="{field}_{tag}"  # /strings            -> "A_1JG"   (unset: "1JG_A")
+PW_GATEWAY_DEFAULT_FORMAT="{tag}_{key}"    # key layout used by every category below unless it sets its own
+PW_GATEWAY_SOLAR_STRING_FORMAT="{key}_{tag}"  # /strings            -> "A_1JG"   (unset: "1JG_A")
 PW_GATEWAY_ALERT_FORMAT=                   # /alerts, /alerts/pw  (unset: "1JG_IslandChecksFailed")
 PW_GATEWAY_FREQ_FORMAT=                    # /freq ISLAND/METER/PVAC (unset: "1JG_PVAC_Fout")
 ```
 
-Templates use the `str.format` mini-language (`{index:02d}`, `{name:>8}`), placeholder names are case-insensitive, and an integer spec on a string value slices it: `{din:-3}` is the last three characters of the DIN (the suffix the old multi-instance proxy used, also available as `{suffix}`), `{din:7}` the first seven. `{din}` is the gateway id as configured in `PW_GATEWAYS`; `{name}` falls back to `{suffix}` when the gateway has no distinct name; `{index}` is the gateway's 1-based position in `PW_GATEWAYS`. Tags are sanitized to `[A-Za-z0-9_-]`. A gateway entry can also set `"tag": "east"` to bypass the template. Each category format falls back to `PW_GATEWAY_FIELD_FORMAT` when unset; a format that lacks `{field}` or does not parse is ignored with a logged warning. `/stats` reports the active settings.
+Templates use the `str.format` mini-language (`{index:02d}`, `{name:>8}`), placeholder names are case-insensitive, and an integer spec on a string value slices it: `{din:-3}` is the last three characters of the DIN (the suffix the old multi-instance proxy used, also available as `{suffix}`), `{din:7}` the first seven. `{din}` is the gateway id as configured in `PW_GATEWAYS`; `{name}` falls back to `{suffix}` when the gateway has no distinct name; `{index}` is the gateway's 1-based position in `PW_GATEWAYS`. Tags are sanitized to `[A-Za-z0-9_-]`. A gateway entry can also set `"tag": "east"` to bypass the template. Each category format falls back to `PW_GATEWAY_DEFAULT_FORMAT` when unset; a format that lacks `{key}` or does not parse is ignored with a logged warning. `/stats` reports the active settings.
 
 **Core Data Endpoints:**
 - `GET /vitals` - Detailed system vitals

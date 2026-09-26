@@ -571,7 +571,7 @@ def get_default_gateway():
 #   /alerts, /alerts/pw                   -> one entry per gateway alert ("<tag>_<alert>")
 #   /temps/pw, /pod                       -> PW<n> numbering continues across gateways
 # How <tag> is built (PW_GATEWAY_TAG, per-gateway "tag") and where it goes in a
-# key (PW_GATEWAY_FIELD_FORMAT, overridden per category by
+# key (PW_GATEWAY_DEFAULT_FORMAT, overridden per category by
 # PW_GATEWAY_SOLAR_STRING_FORMAT / _ALERT_FORMAT / _FREQ_FORMAT) is
 # configurable with Python format strings; see app.core.naming.
 # ---------------------------------------------------------------------------
@@ -590,7 +590,7 @@ def gateway_tag(status) -> str:
 
 
 def _format(category: str) -> str:
-    """Key layout for a tagged category (PW_GATEWAY_<CATEGORY>_FORMAT, else PW_GATEWAY_FIELD_FORMAT)."""
+    """Key layout for a tagged category (PW_GATEWAY_<CATEGORY>_FORMAT, else PW_GATEWAY_DEFAULT_FORMAT)."""
     return naming.category_format(settings, category)
 
 
@@ -615,7 +615,7 @@ def _legacy_statuses() -> list:
 
 def _tagged(key: str, tag: Optional[str], category: str) -> str:
     """Apply the category's key layout when a gateway tag is in play."""
-    return naming.field_name(key, tag, _format(category)) if tag else key
+    return naming.key_name(key, tag, _format(category)) if tag else key
 
 
 # Login cookie max-age: 10 years for long-running kiosk dashboards
@@ -684,7 +684,7 @@ async def get_strings():
 
     Multi-gateway: every gateway's solar strings are returned, keyed per
     PW_GATEWAY_SOLAR_STRING_FORMAT (default "<tag>_A", e.g. "1JG_A", "KW7_A";
-    Powerwall-Dashboard sets "{field}_{tag}" for "A_1JG") so two gateways'
+    Powerwall-Dashboard sets "{key}_{tag}" for "A_1JG") so two gateways'
     string "A" do not collide.
     """
     if is_multi_gateway():
@@ -2624,7 +2624,7 @@ async def get_stats():
         "PW_GW_PWD": "**********" if settings.pw_gw_pwd else None,
         "PW_NEG_SOLAR": settings.neg_solar,
         "PW_GATEWAY_TAG": settings.gateway_tag_format,
-        "PW_GATEWAY_FIELD_FORMAT": settings.gateway_field_format,
+        "PW_GATEWAY_DEFAULT_FORMAT": settings.gateway_default_format,
         "PW_GATEWAY_SOLAR_STRING_FORMAT": settings.gateway_solar_string_format,
         "PW_GATEWAY_ALERT_FORMAT": settings.gateway_alert_format,
         "PW_GATEWAY_FREQ_FORMAT": settings.gateway_freq_format,
