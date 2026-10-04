@@ -57,24 +57,19 @@ Adding New Endpoints:
 import asyncio
 import logging
 import os
-import re
 import time
 from datetime import datetime, timedelta
 from typing import Any, Dict, List, Optional, Tuple
 
 import psutil
 import pypowerwall
-from fastapi import APIRouter, HTTPException, Response, Header
-
 from app.api.auth import verify_control_token
-from app.core.gateway_manager import (
-    IslandingCommandInProgressError,
-    IslandingCooldownError,
-    gateway_manager,
-)
-from app.config import settings, SERVER_VERSION
+from app.config import SERVER_VERSION, settings
 from app.core import naming
+from app.core.gateway_manager import (IslandingCommandInProgressError,
+                                      IslandingCooldownError, gateway_manager)
 from app.utils.stats_tracker import stats_tracker
+from fastapi import APIRouter, Header, HTTPException, Response
 
 logger = logging.getLogger(__name__)
 

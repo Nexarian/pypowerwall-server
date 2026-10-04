@@ -9,8 +9,9 @@ ARG TARGETVARIANT
 
 # Base images per platform — all targets use Debian-slim (not Alpine) to avoid
 # the musl libc TLS fingerprint that Tesla rejects on long-running token
-# refresh (see RELEASE.md v0.15.13 and pypowerwall#344). This matches the
-# base image strategy used by the pypowerwall proxy's own Dockerfile.
+# refresh (see RELEASE.md v0.15.13 and pypowerwall#344). Use a stable Debian
+# release with current security updates to avoid CVEs reported by image scanners
+# without requiring a musl-based runtime.
 FROM python:3.12-slim-bookworm AS base-amd64
 FROM python:3.12-slim-bookworm AS base-arm64
 FROM python:3.12-slim-bookworm AS base-armv7
@@ -26,6 +27,7 @@ WORKDIR /app
 # (see ENTRYPOINT below) for correct signal forwarding and zombie reaping.
 COPY requirements.txt .
 RUN apt-get update && \
+    apt-get upgrade -y && \
     apt-get install -y --no-install-recommends \
         gcc \
         python3-dev \
