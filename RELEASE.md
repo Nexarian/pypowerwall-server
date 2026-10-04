@@ -2,6 +2,11 @@
 
 ## Version History
 
+### [0.9.1] - 2026-10-04
+
+**Fixed:**
+- **Power Flow animation blank behind an HTTPS-terminating proxy** — the powerflow page injected an absolute `window.apiBaseUrl` built from `X-Forwarded-Proto`/`X-Forwarded-Host`/`X-Forwarded-Port`. When TLS terminates upstream of a proxy that overwrites that header (Cloudflare Tunnel/Zero Trust → nginx with `proxy_set_header X-Forwarded-Proto $scheme`), the page loaded over `https://` but the injected base was `http://…/pypowerwall/api`, and the browser blocked every `/meters/aggregates`, `/system_status/soe`, `/sitemaster` … call as mixed content. The base is now path-relative (`{PROXY_BASE_URL}/api`, i.e. `/api` or `/pypowerwall/api`), as in the original pypowerwall proxy (jasonacox/pypowerwall#155), so it inherits whatever scheme, host and port the browser used to reach the page. No nginx change is needed; the `X-Forwarded-*` headers in the README example remain harmless.
+
 ### [0.9.0] - 2026-10-04
 
 **Added:**
