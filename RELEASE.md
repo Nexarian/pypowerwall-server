@@ -4,7 +4,12 @@
 
 ### [0.8.1] - Upcoming
 
+**Added:**
+- **MQTT: Home Assistant controls (opt-in)** — set `MQTT_CONTROLS` to let Home Assistant (or any authorized MQTT client) change backup reserve (`1`), operating mode (`2`), grid charging (`4`) and grid export (`8`), and take the system off grid or reconnect it (`16`, v1r only, needs its own bit: `15` enables everything else). Commands go to `{prefix}/{gw}/control/{control}/set` and the matching entities are auto-discovered, but only those the gateway can run (cloud, FleetAPI, the hybrid cloud connection or v1r). Each command runs on exactly one connection, islanding counts only when the gateway acknowledges it, bursts collapse to the latest value, retained commands are never replayed, and every applied command is logged with gateway, value and connection. The default `0` keeps MQTT monitoring-only (a value outside `0`-`31` is logged as an error and treated as `0`), and controls also need `PW_CONTROL_SECRET` plus `MQTT_USERNAME`/`MQTT_PASSWORD`. `PW_CONTROL_SECRET` is never sent over MQTT, so the broker must reject anonymous clients and restrict the control topics; MQTT.md has a Mosquitto example. Thanks @erikgieseler (#115)
+
 **Fixed:**
+- **Hybrid cloud connection honors `PW_SITEID`** — the shared cloud connection used for control writes alongside a TEDAPI gateway now uses the configured site on multi-site Tesla accounts instead of the account's first site. (#115)
+- **Console Control card spacing** — the Authorization Token panel no longer touches the Operating Mode and Battery panels below it. Thanks @erikgieseler (#115)
 - **Console no longer zooms out on phones** — since the Temp and Fans columns (0.7.0, #119), the Powerwall Status table was about 800px wide, so phone browsers widened the whole page to fit it and showed the Console zoomed out. At 900px and below the table now scrolls sideways inside its card, with slightly tighter cells and each value on one line; the page itself fits the screen at 320–430px. The Temp/Fans detail cards still open on tap or hover below their cell and stay on screen, including for a cell partly scrolled out of view. Applies to both the single-gateway and multi-gateway views. Wider screens are unchanged and the same data is shown. (#135)
 
 ### [0.8.0] - 2026-10-03

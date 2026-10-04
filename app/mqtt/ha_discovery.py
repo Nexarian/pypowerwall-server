@@ -77,6 +77,18 @@ Binary sensor:
 Numeric sensors:
     time_remaining — Backup time remaining (h, device_class=duration)
 
+Controls (MQTT_CONTROLS bitmask + PW_CONTROL_SECRET set, broker-trust;
+only bits in the mask are announced — 1 reserve, 2 mode, 4 grid_charging,
+8 grid_export, 16 islanding):
+    reserve       — number 0-100 % (state reserve)
+    mode          — select [self_consumption, backup, autonomous] (state mode)
+    grid_charging — switch (state grid_charging)
+    grid_export   — select [battery_ok, pv_only, never] (state grid_export)
+    islanding     — buttons Go Off Grid / Reconnect Grid
+Commands go to {prefix}/{gw}/control/{control}/set.
+Reserve, mode and the grid controls are announced only where the gateway can
+write them (cloud, FleetAPI, bound hybrid cloud or v1r); islanding only on v1r.
+
 All sensors share a single "Powerwall" device block so HA groups them together.
 The device model is set from PowerwallData.version when available, otherwise
 "Powerwall".
@@ -191,6 +203,48 @@ def extract_remote_meters(
     return meters
 
 
+def is_v1r_gateway(gateway: Any, data: Any) -> bool:
+    """True when a gateway uses the v1r transport (signed-command capable).
+
+    Fail-closed like the Console gate (``tedapi_mode === 'v1r'``): the RSA
+    key marks a v1r connection, but an unknown/unresolved mode (cold start,
+    cloud failover) must NOT pass — otherwise islanding commands could be
+    dispatched on a transport that cannot sign them. The library's signed
+    islanding command works on Powerwall 2 and 3 alike, so hardware must
+    NOT gate it — otherwise PW2 v1r users lose a control they have today.
+    Shared by discovery (which buttons to announce) and the control loop
+    (which islanding commands to accept).
+    """
+    try:
+        if gateway is None or not getattr(gateway, "rsa_key_configured", False):
+            return False
+        if data is None:
+            return False
+        return getattr(data, "tedapi_mode", None) == "v1r"
+    except Exception:
+        return False
+
+
+# Every control entity: (HA component, unique_id suffix). Discovery clears
+# the ones it doesn't announce, so turning a bit off removes the entity.
+CONTROL_ENTITIES = (
+    ("number", "reserve_control"),
+    ("select", "mode_control"),
+    ("switch", "grid_charging_control"),
+    ("select", "grid_export_control"),
+    ("button", "go_off_grid"),
+    ("button", "reconnect_grid"),
+)
+
+
+def control_config_topics(gateway_id: str, ha_prefix: str) -> list[str]:
+    """HA config topics of all control entities a gateway can have."""
+    return [
+        f"{ha_prefix}/{component}/pypowerwall_{gateway_id}_{suffix}/config"
+        for component, suffix in CONTROL_ENTITIES
+    ]
+
+
 def discovery_signature(
     strings: Optional[Dict[str, Any]],
     vitals: Optional[Dict[str, Any]],
@@ -235,6 +289,9 @@ def build_discovery_payloads(
     string_ids: Optional[Sequence[str]] = None,
     remote_meters: Optional[Dict[str, Dict[str, Dict[str, Any]]]] = None,
     device_signals: Optional[Dict[str, Dict[str, Any]]] = None,
+    controls: int = 0,
+    writable: bool = False,
+    is_v1r: bool = False,
 ) -> list[tuple[str, str]]:
     """Build all HA auto-discovery (topic, payload) pairs for a gateway.
 
@@ -258,9 +315,15 @@ def build_discovery_payloads(
                        get_fan_speeds()) - {serial: {metric_id: value}}.  When
                        provided, per-unit temperature and fan sensors are
                        added so HA auto-discovers them.
+        controls:  MQTT_CONTROLS bitmask: only entities whose bit is set are
+                   added (0 = monitoring only).
+        writable:  The gateway can write reserve, mode and grid settings (cloud,
+                   FleetAPI, bound hybrid cloud or v1r); those four need it.
+        is_v1r:    The gateway uses the v1r transport; the islanding buttons
+                   (PW2 and PW3) need it.
 
     Returns:
-        List of (topic, json_payload_str) tuples, one per sensor/binary sensor.
+        List of (topic, json_payload_str) tuples, one per sensor/binary sensor/control.
     """
     device = _device_block(gateway_id, gateway_name, version)
     data_prefix = f"{topic_prefix}/{gateway_id}"
@@ -335,6 +398,118 @@ def build_discovery_payloads(
         }
         if device_class:
             payload["device_class"] = device_class
+        if icon:
+            payload["icon"] = icon
+        return disc_topic, json.dumps(payload)
+
+    def number(
+        uid_suffix: str,
+        name: str,
+        state_topic: str,
+        command_topic: str,
+        unit: Optional[str] = None,
+        device_class: Optional[str] = None,
+        icon: Optional[str] = None,
+        min_val: float = 0,
+        max_val: float = 100,
+        step: float = 1,
+    ) -> tuple[str, str]:
+        """Build a HA number (slider) discovery entry for controls."""
+        unique_id = f"pypowerwall_{gateway_id}_{uid_suffix}"
+        disc_topic = f"{ha_prefix}/number/{unique_id}/config"
+        payload: dict = {
+            "name": name,
+            "unique_id": unique_id,
+            "state_topic": state_topic,
+            "command_topic": command_topic,
+            "command_template": '{"value": {{ value | int }}}',
+            "min": min_val,
+            "max": max_val,
+            "step": step,
+            "device": device,
+            "availability": avail(),
+            "availability_mode": "all",
+        }
+        if unit:
+            payload["unit_of_measurement"] = unit
+        if device_class:
+            payload["device_class"] = device_class
+        if icon:
+            payload["icon"] = icon
+        return disc_topic, json.dumps(payload)
+
+    def select(
+        uid_suffix: str,
+        name: str,
+        state_topic: str,
+        command_topic: str,
+        options: list[str],
+        icon: Optional[str] = None,
+    ) -> tuple[str, str]:
+        """Build a HA select discovery entry for controls."""
+        unique_id = f"pypowerwall_{gateway_id}_{uid_suffix}"
+        disc_topic = f"{ha_prefix}/select/{unique_id}/config"
+        payload: dict = {
+            "name": name,
+            "unique_id": unique_id,
+            "state_topic": state_topic,
+            "command_topic": command_topic,
+            "command_template": '{"value": "{{ value }}"}',
+            "options": options,
+            "device": device,
+            "availability": avail(),
+            "availability_mode": "all",
+        }
+        if icon:
+            payload["icon"] = icon
+        return disc_topic, json.dumps(payload)
+
+    def switch(
+        uid_suffix: str,
+        name: str,
+        state_topic: str,
+        command_topic: str,
+        icon: Optional[str] = None,
+    ) -> tuple[str, str]:
+        """Build a HA switch discovery entry for controls."""
+        unique_id = f"pypowerwall_{gateway_id}_{uid_suffix}"
+        disc_topic = f"{ha_prefix}/switch/{unique_id}/config"
+        payload: dict = {
+            "name": name,
+            "unique_id": unique_id,
+            "state_topic": state_topic,
+            "command_topic": command_topic,
+            "payload_on": '{"value": true}',
+            "payload_off": '{"value": false}',
+            "state_on": "true",
+            "state_off": "false",
+            "device": device,
+            "availability": avail(),
+            "availability_mode": "all",
+        }
+        if icon:
+            payload["icon"] = icon
+        return disc_topic, json.dumps(payload)
+
+    def button(
+        uid_suffix: str,
+        name: str,
+        command_topic: str,
+        payload_press: str,
+        icon: Optional[str] = None,
+    ) -> tuple[str, str]:
+        """Build a HA button discovery entry for controls."""
+        unique_id = f"pypowerwall_{gateway_id}_{uid_suffix}"
+        disc_topic = f"{ha_prefix}/button/{unique_id}/config"
+        payload: dict = {
+            "name": name,
+            "unique_id": unique_id,
+            "command_topic": command_topic,
+            "payload_press": payload_press,
+            "device": device,
+            "availability": avail(),
+            "availability_mode": "all",
+        }
         if icon:
             payload["icon"] = icon
         return disc_topic, json.dumps(payload)
@@ -535,6 +710,72 @@ def build_discovery_payloads(
             icon="mdi:timer-outline",
         ),
     ]
+
+    if controls:
+        from app.config import (
+            MQTT_CONTROL_GRID_CHARGING,
+            MQTT_CONTROL_GRID_EXPORT,
+            MQTT_CONTROL_ISLANDING,
+            MQTT_CONTROL_MODE,
+            MQTT_CONTROL_RESERVE,
+        )
+
+        if (controls & MQTT_CONTROL_RESERVE) and writable:
+            results.append(
+                number(
+                    "reserve_control", "Backup Reserve Control",
+                    f"{data_prefix}/reserve",
+                    f"{data_prefix}/control/reserve/set",
+                    unit="%",
+                    icon="mdi:battery-lock",
+                    min_val=0, max_val=100, step=1,
+                )
+            )
+        if (controls & MQTT_CONTROL_MODE) and writable:
+            results.append(
+                select(
+                    "mode_control", "Operation Mode Control",
+                    f"{data_prefix}/mode",
+                    f"{data_prefix}/control/mode/set",
+                    options=["self_consumption", "backup", "autonomous"],
+                    icon="mdi:cog",
+                )
+            )
+        if (controls & MQTT_CONTROL_GRID_CHARGING) and writable:
+            results.append(
+                switch(
+                    "grid_charging_control", "Grid Charging Control",
+                    f"{data_prefix}/grid_charging",
+                    f"{data_prefix}/control/grid_charging/set",
+                    icon="mdi:battery-charging-outline",
+                )
+            )
+        if (controls & MQTT_CONTROL_GRID_EXPORT) and writable:
+            results.append(
+                select(
+                    "grid_export_control", "Grid Export Control",
+                    f"{data_prefix}/grid_export",
+                    f"{data_prefix}/control/grid_export/set",
+                    options=["battery_ok", "pv_only", "never"],
+                    icon="mdi:transmission-tower-export",
+                )
+            )
+        # Islanding buttons, like the Console: v1r transport (PW2 + PW3)
+        if (controls & MQTT_CONTROL_ISLANDING) and is_v1r:
+            results.extend([
+                button(
+                    "go_off_grid", "Go Off Grid",
+                    f"{data_prefix}/control/islanding/set",
+                    '{"action":"off_grid","confirm":true}',
+                    icon="mdi:transmission-tower-off",
+                ),
+                button(
+                    "reconnect_grid", "Reconnect Grid",
+                    f"{data_prefix}/control/islanding/set",
+                    '{"action":"on_grid","confirm":true}',
+                    icon="mdi:transmission-tower",
+                ),
+            ])
 
     # --- Solar string sensors (per-string + paired rollups) ---
     if string_ids:
