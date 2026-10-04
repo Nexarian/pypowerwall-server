@@ -2,7 +2,7 @@
 
 ## Version History
 
-### [0.8.0] - Upcoming
+### [0.8.0] - 2026-10-03
 
 **Added:**
 - **History page (`/history`)** — look up daily energy for any date range (1 hour to all stored history): range totals (solar, best solar day, home, battery in/out, grid import/export, self-powered %), a per-day chart with series toggles, a table and CSV download; on the 1h/6h/24h ranges it shows the console's Energy Trend chart instead (solar, home, battery and grid kW plus battery level % on a right axis). It opens at 24h, or at the last range preset picked in that browser. The range, gateway, selected Powerwall (`pw=`) and switched-off series (`hide=`) are kept in the URL for bookmarking. It has the Console's header, including **Cards** (show or hide the energy card and each chart card, saved per browser) and **Kiosk** (`?kiosk=1`), shared by both pages in `app/static/js/page.js` / `app/static/css/page.css`. Linked from the console header and the Daily Energy card. Charts are drawn on canvas with no external libraries, so the page works without internet access. (#130)
@@ -11,6 +11,7 @@
 - **MQTT: per-unit Powerwall temperature and fan sensors** — each Powerwall unit's temperature and fan readings are published over MQTT keyed by unit serial, with matching Home Assistant auto-discovery sensors: `devices/{serial}/temperature/{pack_max,pack_min,shunt,ambient,controller}` (°C) and `devices/{serial}/fan/{a,b}/{rpm,duty}` (PW3) or `devices/{serial}/fan/{rpm,target_rpm}` (PW2/2+), plus a full per-unit JSON topic. Only signals each unit actually reports are discovered (no unavailable entities for missing hardware). Sources are the existing `vitals` poll plus the `get_fan_speeds()` cache — no new gateway calls. Signal names, ids and extraction live in a new shared registry, `app/core/signals.py`, so MQTT and the history store (upcoming) use one vocabulary. Available in TEDAPI modes (Basic LAN skips vitals); absent in cloud-only mode. (#133, #134)
 
 **Fixed:**
+- **One header for the Console and History** — both pages share the same menu (Console, History, Power Flow, API Docs, Gateways API, GitHub, Cards, Kiosk), version badge, page width and scrollbar, from shared `app/static/js/page.js` and `app/static/css/page.css`, so nothing moves when switching pages. The Console's card visibility, kiosk mode and URL parameters work as before. (#130)
 - **Console Energy Trend: shared chart code** — the chart now lives in `app/static/js/charts.js` (with `app/static/css/charts.css`), shared with the History page; tick labels fall on the hour, legend buttons report their state to screen readers, it also gains sharper rendering on high-DPI screens and tap-to-inspect on touch screens. (#130)
 - **Console Energy Trend: overlapping axis labels** — when battery or grid power goes negative, the kW label nearest the zero line no longer prints on top of the "0" label. (#130)
 
