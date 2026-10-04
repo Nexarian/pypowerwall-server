@@ -2,6 +2,11 @@
 
 ## Version History
 
+### [0.8.1] - Upcoming
+
+**Fixed:**
+- **Console no longer zooms out on phones** — since the Temp and Fans columns (0.7.0, #119), the Powerwall Status table was about 800px wide, so phone browsers widened the whole page to fit it and showed the Console zoomed out. At 900px and below the table now scrolls sideways inside its card, with slightly tighter cells and each value on one line; the page itself fits the screen at 320–430px. The Temp/Fans detail cards still open on tap or hover below their cell and stay on screen, including for a cell partly scrolled out of view. Applies to both the single-gateway and multi-gateway views. Wider screens are unchanged and the same data is shown. (#135)
+
 ### [0.8.0] - 2026-10-03
 
 **Added:**
