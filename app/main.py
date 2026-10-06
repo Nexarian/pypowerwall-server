@@ -425,7 +425,7 @@ async def favicon_ico():
 
 
 @app.get("/", response_class=HTMLResponse, tags=["UI"])
-async def root(request: Request, style: str = None):
+async def root(style: str = None):
     """Serve the Power Flow animation (Tesla Powerwall interface).
 
     Args:
