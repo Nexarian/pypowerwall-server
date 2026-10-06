@@ -2,6 +2,11 @@
 
 ## Version History
 
+### [0.9.1] - Upcoming
+
+**Fixed:**
+- **Console status no longer flashes red when you come back from the API docs** — going Back restored the page as you left it, including the live connection the browser had closed, so the status banner showed disconnected until it reconnected. The Console now closes that connection quietly when you leave and reconnects as soon as you return; a real disconnect still shows red. Thanks @erikgieseler (#142)
+
 ### [0.9.0] - 2026-10-04
 
 **Added:**
