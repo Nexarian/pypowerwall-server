@@ -2,10 +2,11 @@
 
 ## Version History
 
-### [0.9.1] - 2026-10-04
+### [0.9.1] - Upcoming
 
 **Fixed:**
-- **Power Flow animation blank behind an HTTPS-terminating proxy** — the powerflow page injected an absolute `window.apiBaseUrl` built from `X-Forwarded-Proto`/`X-Forwarded-Host`/`X-Forwarded-Port`. When TLS terminates upstream of a proxy that overwrites that header (Cloudflare Tunnel/Zero Trust → nginx with `proxy_set_header X-Forwarded-Proto $scheme`), the page loaded over `https://` but the injected base was `http://…/pypowerwall/api`, and the browser blocked every `/meters/aggregates`, `/system_status/soe`, `/sitemaster` … call as mixed content. The base is now path-relative (`{PROXY_BASE_URL}/api`, i.e. `/api` or `/pypowerwall/api`), as in the original pypowerwall proxy (jasonacox/pypowerwall#155), so it inherits whatever scheme, host and port the browser used to reach the page. No nginx change is needed; the `X-Forwarded-*` headers in the README example remain harmless.
+- **Power Flow works behind HTTPS proxies that rewrite forwarded headers** — the Power Flow page built its API address from the `X-Forwarded-*` headers. Behind Cloudflare Tunnel or Zero Trust in front of nginx (`X-Forwarded-Proto $scheme`), an `https://` page got an `http://` address, the browser blocked every data call and the animation stayed blank. The address is now a path (`/api`, or `{PROXY_BASE_URL}/api`), so the browser uses the same scheme, host and port it loaded the page with, as the pypowerwall proxy does. Existing proxy setups keep working. Thanks @Nexarian (#140)
+- **Console status no longer flashes red when you come back from the API docs** — going Back restored the page as you left it, including the live connection the browser had closed, so the status banner showed disconnected until it reconnected. The Console now closes that connection quietly when you leave and reconnects as soon as you return; a real disconnect still shows red. Thanks @erikgieseler (#142)
 
 ### [0.9.0] - 2026-10-04
 

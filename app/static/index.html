@@ -2164,6 +2164,7 @@
         const maxReconnectAttempts = 10;
         const reconnectDelay = 3000;
         let lastUpdateTime = null;
+        let reconnectTimer = null;
         
         // Trend chart data (in-memory only, cleared on refresh)
         const trendData = {
@@ -2248,6 +2249,7 @@
             const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
             const wsUrl = `${protocol}//${window.location.host}/ws/aggregate`;
             
+            dropWebSocket();
             ws = new WebSocket(wsUrl);
             
             ws.onopen = () => {
@@ -2268,7 +2270,8 @@
             ws.onclose = () => {
                 console.log('WebSocket disconnected, reconnecting...');
                 updateBannerStatus(false);
-                setTimeout(connectWebSocket, 3000);
+                clearTimeout(reconnectTimer);
+                reconnectTimer = setTimeout(connectWebSocket, reconnectDelay);
             };
         }
         
@@ -2282,6 +2285,27 @@
                 banner.classList.add('disconnected');
             }
         }
+
+        // Close the current socket for good. Its handlers go first: a socket
+        // closed on pagehide can deliver its close event after a Back-Forward
+        // Cache restore, and must not turn the banner red or reconnect then.
+        function dropWebSocket() {
+            clearTimeout(reconnectTimer);
+            if (!ws) return;
+            ws.onopen = ws.onmessage = ws.onerror = ws.onclose = null;
+            try { ws.close(); } catch (e) {}
+            ws = null;
+        }
+
+        // Back-Forward Cache: the browser kills the socket on hide, which
+        // would show red on return. Close it quietly instead and reconnect
+        // right away when the page is restored (green, like a fresh load).
+        window.addEventListener('pagehide', dropWebSocket);
+        window.addEventListener('pageshow', (event) => {
+            if (!event.persisted) return;
+            updateBannerStatus(true);
+            connectWebSocket();
+        });
         
         function formatPower(watts) {
             const kw = watts / 1000;
