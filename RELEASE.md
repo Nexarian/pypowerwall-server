@@ -2,7 +2,7 @@
 
 ## Version History
 
-### [0.9.1] - Upcoming
+### [0.9.1] - 2026-10-10
 
 **Fixed:**
 - **Power Flow works behind HTTPS proxies that rewrite forwarded headers** — the Power Flow page built its API address from the `X-Forwarded-*` headers. Behind Cloudflare Tunnel or Zero Trust in front of nginx (`X-Forwarded-Proto $scheme`), an `https://` page got an `http://` address, the browser blocked every data call and the animation stayed blank. The address is now a path (`/api`, or `{PROXY_BASE_URL}/api`), so the browser uses the same scheme, host and port it loaded the page with, as the pypowerwall proxy does. Existing proxy setups keep working. Thanks @Nexarian (#140)
