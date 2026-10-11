@@ -5,6 +5,7 @@
 ### [0.9.1] - Upcoming
 
 **Fixed:**
+- **Power Flow works behind HTTPS proxies that rewrite forwarded headers** — the Power Flow page built its API address from the `X-Forwarded-*` headers. Behind Cloudflare Tunnel or Zero Trust in front of nginx (`X-Forwarded-Proto $scheme`), an `https://` page got an `http://` address, the browser blocked every data call and the animation stayed blank. The address is now a path (`/api`, or `{PROXY_BASE_URL}/api`), so the browser uses the same scheme, host and port it loaded the page with, as the pypowerwall proxy does. Existing proxy setups keep working. Thanks @Nexarian (#140)
 - **Console status no longer flashes red when you come back from the API docs** — going Back restored the page as you left it, including the live connection the browser had closed, so the status banner showed disconnected until it reconnected. The Console now closes that connection quietly when you leave and reconnects as soon as you return; a real disconnect still shows red. Thanks @erikgieseler (#142)
 
 **Changed:**
